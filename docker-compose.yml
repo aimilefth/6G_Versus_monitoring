@@ -8,6 +8,9 @@ services:
     container_name: prometheus
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--web.enable-remote-write-receiver'
     # Use the host's network. This makes scraping other services on localhost easy.
     network_mode: host
 
@@ -19,4 +22,14 @@ services:
     #   context: ./pyjoules-metrics-client-simple
     network_mode: host
     container_name: pyjoules-metrics-client-simple
+    privileged: true
+
+  pyjoules-metrics-client-remote-write:
+    image: aimilefth/pyjoules-metrics-client-remote-write
+    pull_policy: always
+    # Use this if wanting to build all the time
+    # build:
+    #   context: ./pyjoules-metrics-client-simple
+    network_mode: host
+    container_name: pyjoules-metrics-client-remote-write
     privileged: true
