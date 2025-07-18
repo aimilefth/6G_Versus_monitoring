@@ -1,0 +1,22 @@
+# docker_compose.yml
+version: '3.8'
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    pull_policy: always
+    container_name: prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    # Use the host's network. This makes scraping other services on localhost easy.
+    network_mode: host
+
+  pyjoules-metrics-client-simple:
+    image: aimilefth/pyjoules-metrics-client-simple
+    pull_policy: always
+    # Use this if wanting to build all the time
+    # build:
+    #   context: ./pyjoules-metrics-client-simple
+    network_mode: host
+    container_name: pyjoules-metrics-client-simple
+    privileged: true
