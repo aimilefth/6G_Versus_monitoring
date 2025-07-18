@@ -1,6 +1,6 @@
 # my global config
 global:
-  scrape_interval: 1s # Set the scrape interval to every 15 seconds. Default is every 1 minute.
+  scrape_interval: 10ms # Set the scrape interval to every 15 seconds. Default is every 1 minute.
   evaluation_interval: 1s # Evaluate rules every 15 seconds. The default is every 1 minute.
   # scrape_timeout is set to the global default (10s).
 
@@ -24,7 +24,6 @@ scrape_configs:
 
     # metrics_path defaults to '/metrics'
     # scheme defaults to 'http'.
-
     static_configs:
       - targets: ["localhost:9090"]
        # The label name is added as a label `label_name=<label_value>` to any timeseries scraped from this config.

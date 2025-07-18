@@ -1,9 +1,6 @@
 FROM python:3.11-slim
 
 WORKDIR /app
-ENV SAMPLING_PERIOD_S=0.1
-ENV BATCH_SIZE=10
-ENV REMOTE_WRITE_URL=http://localhost:9090/api/v1/write
 
 # build deps for one-off protoc run
 RUN pip install --no-cache-dir \
@@ -18,5 +15,9 @@ RUN python -m grpc_tools.protoc -I. --python_out=. remote.proto
 
 # --- 3) copy application code -------------------------------------
 COPY power_scraper.py remote_write_pusher.py ./
+
+ENV SAMPLING_PERIOD_S=0.1
+ENV BATCH_SIZE=100
+ENV REMOTE_WRITE_URL=http://localhost:9090/api/v1/write
 
 CMD ["python", "remote_write_pusher.py"]
