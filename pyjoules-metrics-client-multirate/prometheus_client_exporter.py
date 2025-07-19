@@ -30,12 +30,12 @@ class PowerCollector:
 
             for comp, uj in sample["energy"].items():
                 m = core.Metric(
-                    "pyjoules_energy_uj",
-                    "Energy consumption (µJ) per component",
+                    "pyjoules_multirate_energy_uj",
+                    "Energy consumption (µJ) per component, on multirate client",
                     "gauge",
                 )
                 m.add_sample(
-                    "pyjoules_energy_uj",
+                    "pyjoules_multirate_energy_uj",
                     labels={"component": comp},
                     value=float(uj),
                     timestamp=ts,
@@ -43,8 +43,8 @@ class PowerCollector:
                 yield m
 
             dur = core.Metric(
-                "pyjoules_measurement_duration_seconds",
-                "pyJoules measurement duration of each probe",
+                "pyjoules_multirate_measurement_duration_seconds",
+                "pyJoules measurement duration of each probe, on multirate client",
                 "gauge",
             )
             dur.add_sample(

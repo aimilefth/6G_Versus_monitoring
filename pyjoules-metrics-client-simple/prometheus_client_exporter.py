@@ -9,14 +9,14 @@ from power_scraper import power_scraper
 # We use a Gauge metric type, as power is a value that can go up or down.
 # We add a 'domain' label to distinguish between different energy sources (package, core, dram, etc.).
 PYJOULES_ENERGY_WATTS = Gauge(
-    'pyjoules_energy_watts',
-    'Energy consumption in Watts reported by pyJoules',
+    'pyjoules_simple_energy_watts',
+    'Energy consumption in Watts reported by pyJoules, on simple client',
     ['domain']
 )
 
 PYJOULES_MEASUREMENT_DURATION = Gauge(
-    'pyjoules_measurement_duration_seconds',
-    'Duration of the pyJoules energy measurement cycle'
+    'pyjoules_simple_measurement_duration_seconds',
+    'Duration of the pyJoules energy measurement cycle, on simple client'
 )
 
 class MetricsExporter:

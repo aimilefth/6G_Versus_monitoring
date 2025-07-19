@@ -32,6 +32,8 @@ services:
     #   context: ./pyjoules-metrics-client-simple
     network_mode: host
     container_name: pyjoules-metrics-client-remote-write
+    privileged: true
+
   pyjoules-metrics-client-multirate:
     image: aimilefth/pyjoules-metrics-client-multirate
     pull_policy: always

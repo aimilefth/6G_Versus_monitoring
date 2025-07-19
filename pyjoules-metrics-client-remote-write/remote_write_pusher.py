@@ -69,7 +69,7 @@ def shipper():
             for component, uj_value in energy_data.items():
                 # The unique identifier for a time series is its set of labels.
                 series_key = (
-                    ("__name__", "pyjoules_energy_uj"),
+                    ("__name__", "pyjoules_remote_write_energy_uj"),
                     ("component", str(component)),
                 )
                 # Append the new sample to the list for this series
