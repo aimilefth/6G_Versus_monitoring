@@ -32,4 +32,12 @@ services:
     #   context: ./pyjoules-metrics-client-simple
     network_mode: host
     container_name: pyjoules-metrics-client-remote-write
+  pyjoules-metrics-client-multirate:
+    image: aimilefth/pyjoules-metrics-client-multirate
+    pull_policy: always
+    # # Use this if wanting to build all the time
+    # build:
+    #   context: ./pyjoules-metrics-client-multirate
+    network_mode: host
+    container_name: pyjoules-metrics-client-multirate
     privileged: true
