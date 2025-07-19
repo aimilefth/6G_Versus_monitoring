@@ -9,8 +9,8 @@ from prometheus_client import start_http_server, core
 from power_scraper import power_scraper
 
 # ─────────── Configuration via env or defaults ────────────
-SCRAPING_FREQ = float(os.getenv("SCRAPING_FREQ", "0.1"))   # internal sampler period (seconds)
-HTTP_PORT     = int(os.getenv("HTTP_PORT", "9092"))        # where we expose /metrics
+SCRAPE_INTERVAL_SECONDS = float(os.getenv("SCRAPE_INTERVAL_SECONDS", "0.1"))   # internal sampler period (seconds)
+EXPORTER_PORT     = int(os.getenv("EXPORTER_PORT", "9092"))        # where we expose /metrics
 MAX_QUEUE_LEN = int(os.getenv("MAX_QUEUE_LEN", "1000"))    # safety cap (~100 s of samples)
 
 # ──────────── Custom collector that flushes the buffer ────────────
@@ -48,7 +48,7 @@ class PowerCollector:
                 "gauge",
             )
             dur.add_sample(
-                "pyjoules_measurement_duration_seconds",
+                "pyjoules_multirate_measurement_duration_seconds",
                 labels={},
                 value=sample["duration"],
                 timestamp=ts,
@@ -82,9 +82,9 @@ def sampler(buffer: deque, period: float):
 def main() -> None:
     ring_buffer: deque = deque()                 # thread-safe enough for this use
     core.REGISTRY.register(PowerCollector(ring_buffer))
-    start_http_server(HTTP_PORT)
+    start_http_server(EXPORTER_PORT)
 
-    threading.Thread(target=sampler, args=(ring_buffer, SCRAPING_FREQ), daemon=True).start()
+    threading.Thread(target=sampler, args=(ring_buffer, SCRAPE_INTERVAL_SECONDS), daemon=True).start()
 
     # keep PID 1 alive
     try:

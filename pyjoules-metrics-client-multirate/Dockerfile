@@ -12,6 +12,7 @@ COPY prometheus_client_exporter.py .
 # Set default environment variables
 ENV EXPORTER_PORT=9092
 ENV SCRAPE_INTERVAL_SECONDS=0.1
+ENV MAX_QUEUE_LEN=1000
 
 # Expose the port the exporter will run on
 EXPOSE ${EXPORTER_PORT}
