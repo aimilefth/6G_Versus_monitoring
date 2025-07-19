@@ -16,8 +16,8 @@ RUN python -m grpc_tools.protoc -I. --python_out=. remote.proto
 # --- 3) copy application code -------------------------------------
 COPY power_scraper.py remote_write_pusher.py ./
 
-ENV SAMPLING_PERIOD_S=0.1
-ENV BATCH_SIZE=100
+ENV SAMPLING_PERIOD_S=4
+ENV BATCH_SIZE=5
 ENV REMOTE_WRITE_URL=http://localhost:9090/api/v1/write
 
 CMD ["python", "remote_write_pusher.py"]
