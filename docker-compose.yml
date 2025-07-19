@@ -13,7 +13,16 @@ services:
       - '--web.enable-remote-write-receiver'
     # Use the host's network. This makes scraping other services on localhost easy.
     network_mode: host
-
+ 
+  grafana:
+    image: grafana/grafana:12.0.2
+    pull_policy: always
+    container_name: grafana
+    user: "${UID}:${GID}" # <-- FIX: Run as the current user
+    volumes:
+      - ./grafana/grafana-storage:/var/lib/grafana
+    network_mode: host
+    
   pyjoules-metrics-client-simple:
     image: aimilefth/pyjoules-metrics-client-simple
     pull_policy: always
