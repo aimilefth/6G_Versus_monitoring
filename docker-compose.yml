@@ -29,13 +29,15 @@ services:
     pull_policy: always
     # useful but not mandatory; you can drop it or keep defaults in .env
     user: "${UID:-1001}:${GID:-1001}"
-    # Create grafana/grafana-storage with the correct permissions before running this
-    volumes:
-      - ./grafana/grafana-storage:/var/lib/grafana
     networks:
       - monitoring
     ports:
       - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - ./grafana/grafana.ini:/etc/grafana/grafana.ini
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/etc/grafana/dashboards
+
 
   pyjoules-metrics-client-simple:
     image: ${CLIENT_SIMPLE_IMAGE:-aimilefth/pyjoules-metrics-client-simple}

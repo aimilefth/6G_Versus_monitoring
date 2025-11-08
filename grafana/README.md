@@ -19,12 +19,15 @@ The Grafana service is defined in the main `docker-compose.yml` file:
 - **`image: ${GRAFANA_IMAGE}`**: Specifies the official Grafana Docker image, configured via the `.env` file.
 - **`networks: - monitoring`**: Connects Grafana to the same bridge network as Prometheus, enabling them to communicate.
 - **`user: "${UID:-1001}:${GID:-1001}"`**: This ensures that Grafana runs as the current host user, preventing permission issues. The UID and GID can be set in the `.env` file.
-- **`volumes`**: A local directory, `./grafana/grafana-storage`, is mounted into the container at `/var/lib/grafana`. This is critical for **data persistence**, as it saves all your created dashboards and data sources.
+- **`volumes`**: Key configuration files are mounted from the host into the container. This enables a declarative, version-controllable setup.
+    - `./grafana/grafana.ini`: Custom settings for the Grafana instance.
+    - `./grafana/provisioning`: Contains YAML files that automatically configure data sources and dashboard providers on startup.
+    - `./grafana/dashboards`: Contains the JSON definition for dashboards that will be loaded by the provisioner.
 
-### First-Time Setup
-1.  Navigate to [http://localhost:3000](http://localhost:3000).
-2.  Log in with the default credentials: `admin` / `admin`.
-3.  Go to **Connections -> Data Sources** and add a new **Prometheus** data source.
-4.  Set the **Prometheus server URL** to `http://prometheus:9090`. Since Grafana is on the same Docker network as Prometheus, it can reach it directly via its service name.
-5.  Click **Save & Test**. You should see a confirmation that the data source is working.
-6.  You can now create new dashboards and add panels that query the PyJoules metrics.
+### Automatic Provisioning
+This project uses Grafana's provisioning feature to automate setup. Instead of manually configuring Grafana through the UI, the necessary configuration is defined in files:
+
+1.  **Data Source (`./provisioning/datasources/pyjoules.prom.yml`)**: This file tells Grafana to create a Prometheus data source named `Prometheus`, pointing to `http://prometheus:9090`. Since Grafana is on the same Docker network, it can reach Prometheus via its service name.
+2.  **Dashboard (`./provisioning/dashboards/pyjoules.dash.yml` and `./dashboards/pyjoules.json`)**: The YAML file configures a dashboard provider that loads all JSON files from the `/etc/grafana/dashboards` directory inside the container. The `pyjoules.json` file is mounted into this location, making the dashboard available instantly.
+
+When the service starts, you can navigate to [http://localhost:3000](http://localhost:3000), log in (`admin`/`6GVERSUS`), and the data source and dashboard will already be configured.

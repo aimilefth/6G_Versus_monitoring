@@ -14,8 +14,16 @@ The primary goal is to compare and contrast different metric collection strategi
 ├── .env
 ├── docker-compose.yml
 ├── grafana
-│   ├── README.md
-│   └── docker_run.sh
+│   ├── dashboards
+│   │   └── pyjoules.json
+│   ├── docker_run.sh
+│   ├── grafana.ini
+│   ├── provisioning
+│   │   ├── dashboards
+│   │   │   └── pyjoules.dash.yml
+│   │   └── datasources
+│   │       └── pyjoules.prom.yml
+│   └── README.md
 ├── prometheus
 │   ├── docker_run.sh
 │   ├── entrypoint.sh
@@ -69,8 +77,8 @@ Once the containers are running, you can access the services in your web browser
 *   **Prometheus UI:** [http://localhost:9090](http://localhost:9090)
     *   You can use the expression browser to query metrics like `pyjoules_simple_energy_watts`, `pyjoules_multirate_energy_uj`, and `pyjoules_remote_write_energy_uj`.
 *   **Grafana UI:** [http://localhost:3000](http://localhost:3000)
-    *   Default credentials: `admin` / `admin`. You will be prompted to change the password on first login.
-    *   You will need to configure a Prometheus data source. Use `http://prometheus:9090` as the URL, since Grafana and Prometheus are on the same Docker network. You can then build dashboards to visualize the data.
+    *   Default credentials: `admin` / `6GVERSUS`.
+    *   The Prometheus data source and a basic dashboard are automatically provisioned. No manual setup is needed.
 
 To stop all services, run:
 ```bash

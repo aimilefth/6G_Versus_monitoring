@@ -1,0 +1,14 @@
+# grafana/provisioning/datasources/pyjoules-prom.yml
+apiVersion: 1
+
+datasources:
+  - uid: prometheus
+    name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+    jsonData:
+      # this is the “suggested interval” grafana uses in query editor
+      timeInterval: 20ms

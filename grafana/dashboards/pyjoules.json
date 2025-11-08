@@ -1,0 +1,180 @@
+{
+    "title": "Basic Dashboard",
+    "uid": "pyjoules-basic",
+    "schemaVersion": 41,
+    "version": 1,
+    "editable": true,
+    "graphTooltip": 0,
+    "refresh": "5s",
+    "time": {
+      "from": "now-1m",
+      "to": "now"
+    },
+    "timezone": "browser",
+    "annotations": {
+      "list": [
+        {
+          "builtIn": 1,
+          "datasource": {
+            "type": "grafana",
+            "uid": "-- Grafana --"
+          },
+          "enable": true,
+          "hide": true,
+          "iconColor": "rgba(0, 211, 255, 1)",
+          "name": "Annotations & Alerts",
+          "type": "dashboard"
+        }
+      ]
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "PyJoules signals",
+        "type": "timeseries",
+        "pluginVersion": "12.0.2",
+        "gridPos": {
+          "h": 8,
+          "w": 24,
+          "x": 0,
+          "y": 0
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "targets": [
+          {
+            "refId": "A",
+            "expr": "pyjoules_multirate_energy_uj",
+            "legendFormat": "__auto",
+            "range": true,
+            "interval": "20ms",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+            }
+          },
+          {
+            "refId": "B",
+            "expr": "pyjoules_simple_energy_watts",
+            "legendFormat": "__auto",
+            "range": true,
+            "interval": "20ms",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+            }
+          },
+          {
+            "refId": "C",
+            "expr": "pyjoules_remote_write_energy_uj",
+            "legendFormat": "__auto",
+            "range": true,
+            "interval": "20ms",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+            }
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "axisBorderShow": false,
+              "axisCenteredZero": false,
+              "axisColorMode": "text",
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "barWidthFactor": 0.6,
+              "drawStyle": "line",
+              "fillOpacity": 0,
+              "gradientMode": "none",
+              "hideFrom": {
+                "legend": false,
+                "tooltip": false,
+                "viz": false
+              },
+              "insertNulls": false,
+              "lineInterpolation": "linear",
+              "lineWidth": 1,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "auto",
+              "spanNulls": false,
+              "stacking": {
+                "group": "A",
+                "mode": "none"
+              },
+              "thresholdsStyle": {
+                "mode": "off"
+              }
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green"
+                },
+                {
+                  "color": "red",
+                  "value": 80
+                }
+              ]
+            }
+          },
+          "overrides": [
+            {
+              "__systemRef": "hideSeriesFrom",
+              "matcher": {
+                "id": "byNames",
+                "options": {
+                  "mode": "exclude",
+                  "names": [
+                    "{__name__=\"pyjoules_simple_energy_watts\", domain=\"package_0\", instance=\"pyjoules-metrics-client-simple:9091\", job=\"pyjoules_simple\"}"
+                  ],
+                  "prefix": "All except:",
+                  "readOnly": true
+                }
+              },
+              "properties": [
+                {
+                  "id": "custom.hideFrom",
+                  "value": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "legend": {
+            "showLegend": true,
+            "displayMode": "list",
+            "placement": "bottom",
+            "calcs": []
+          },
+          "tooltip": {
+            "mode": "single",
+            "sort": "none",
+            "hideZeros": false
+          }
+        }
+      }
+    ],
+    "templating": {
+      "list": []
+    },
+    "links": []
+  }
+  
