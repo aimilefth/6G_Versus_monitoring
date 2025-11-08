@@ -46,7 +46,12 @@ services:
     # build:
     #   context: ./pyjoules-metrics-client-simple
     container_name: pyjoules-metrics-client-simple
-    privileged: true
+    volumes:
+      - /sys/class/powercap:/sys/class/powercap:ro
+      - /sys/devices/virtual/powercap:/sys/devices/virtual/powercap:ro
+    security_opt:
+      - apparmor=docker-pyjoules    # <— use our custom profile
+      - systempaths=unconfined
     networks:
       - monitoring
     environment:
@@ -63,7 +68,12 @@ services:
     # build:
     #   context: ./pyjoules-metrics-client-simple
     container_name: pyjoules-metrics-client-remote-write
-    privileged: true
+    volumes:
+      - /sys/class/powercap:/sys/class/powercap:ro
+      - /sys/devices/virtual/powercap:/sys/devices/virtual/powercap:ro
+    security_opt:
+      - apparmor=docker-pyjoules    # <— use our custom profile
+      - systempaths=unconfined
     networks:
       - monitoring
     environment:
@@ -79,7 +89,12 @@ services:
     # build:
     #   context: ./pyjoules-metrics-client-multirate
     container_name: pyjoules-metrics-client-multirate
-    privileged: true
+    volumes:
+      - /sys/class/powercap:/sys/class/powercap:ro
+      - /sys/devices/virtual/powercap:/sys/devices/virtual/powercap:ro
+    security_opt:
+      - apparmor=docker-pyjoules    # <— use our custom profile
+      - systempaths=unconfined
     networks:
       - monitoring
     environment:

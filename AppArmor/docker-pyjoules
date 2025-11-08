@@ -1,0 +1,56 @@
+#include <tunables/global>
+
+profile docker-pyjoules flags=(attach_disconnected,mediate_deleted) {
+  # this is the same include docker-default uses
+  # (gives you the usual filesystem, proc, etc. abstractions)
+  # if your distro puts it elsewhere, adjust the path
+  # but on Ubuntu this is right:
+  #include <abstractions/base>
+
+  # ----- core allowances like docker-default -----
+  network,
+  capability,
+  file,
+  umount,
+
+  # allow the host / runtime / dockerd to signal the container, like docker-default
+  # Host (privileged) processes may send signals to container processes.
+  signal (receive) peer=unconfined,
+  # runc may send signals to container processes (for "docker stop").
+  signal (receive) peer=runc,
+  # crun may send signals to container processes (for "docker stop" when used with crun OCI runtime).
+  signal (receive) peer=crun,
+  # dockerd may send signals to container processes (for "docker kill").
+  signal (receive) peer={{.DaemonProfile}},
+  # Container processes may send signals amongst themselves.
+  signal (send,receive) peer=docker-pyjoules,
+
+  # ----- the same “proc” protections docker-default has -----
+  deny @{PROC}/* w,   # deny write for all files directly in /proc (not in a subdir)
+  # deny write to files not in /proc/<number>/** or /proc/sys/**
+  deny @{PROC}/{[^1-9],[^1-9][^0-9],[^1-9s][^0-9y][^0-9s],[^1-9][^0-9][^0-9][^0-9/]*}/** w,
+  deny @{PROC}/sys/[^k]** w,  # deny /proc/sys except /proc/sys/k* (effectively /proc/sys/kernel)
+  deny @{PROC}/sys/kernel/{?,??,[^s][^h][^m]**} w,  # deny everything except shm* in /proc/sys/kernel/
+  deny @{PROC}/sysrq-trigger rwklx,
+  deny @{PROC}/kcore rwklx,
+
+  # no mounting inside the container
+  deny mount,
+
+  # ----- the standard docker /sys lockdown -----
+  deny /sys/[^f]*/** wklx,
+  deny /sys/f[^s]*/** wklx,
+  deny /sys/fs/[^c]*/** wklx,
+  deny /sys/fs/c[^g]*/** wklx,
+  deny /sys/fs/cg[^r]*/** wklx,
+  deny /sys/firmware/** rwklx,
+  # docker-default DENIES powercap here — we REMOVE that deny
+  # deny /sys/devices/virtual/powercap/** rwklx,
+  # pyjoules needs to READ energy_uj from RAPL — so we allow RO access:
+  /sys/devices/virtual/powercap/** r,
+  /sys/class/powercap/** r,
+  deny /sys/kernel/security/** rwklx,
+
+  # suppress ptrace denials when using 'docker ps' or using 'ps' inside a container
+  ptrace (trace,read,tracedby,readby) peer=docker-pyjoules,
+}

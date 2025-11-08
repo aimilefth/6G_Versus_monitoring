@@ -1,0 +1,10 @@
+services:
+  pyjoules-metrics-client-simple:
+    privileged: true
+    security_opt: []
+  pyjoules-metrics-client-remote-write:
+    privileged: true
+    security_opt: []
+  pyjoules-metrics-client-multirate:
+    privileged: true
+    security_opt: []
