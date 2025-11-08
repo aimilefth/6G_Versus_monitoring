@@ -4,7 +4,7 @@ This prototype demonstrates the most common method of Prometheus monitoring: the
 
 ## Functionality
 
-The client operates as a simple metric exporter. It continuously measures power consumption and exposes the latest reading as a set of Prometheus metrics on an HTTP endpoint. Prometheus is configured to "scrape" (fetch data from) this endpoint at a regular interval (e.g., every 2 seconds).
+The client operates as a simple metric exporter. It continuously measures power consumption and exposes the latest reading as a set of Prometheus metrics on an HTTP endpoint. Prometheus is configured to "scrape" (fetch data from) this endpoint at a regular interval.
 
 - **Data Model:** The client calculates the average power consumption (in Watts) over its internal measurement interval.
 - **Collection Method:** Passive. The client waits for Prometheus to request data.
@@ -30,10 +30,10 @@ This is the main script that runs the exporter.
 This is a helper module that provides a clean interface to the `pyJoules` library. The `power_scraper` class has a `get_power()` method that performs a single energy measurement over a specified interval and returns the data as a dictionary.
 
 ### `Dockerfile`
-- It uses a lightweight `python:3.11-alpine` base image.
-- It installs the necessary Python dependencies: `pyjoules` and `prometheus-client`.
+- It uses a lightweight `python:3.11-slim` base image.
+- It installs the necessary, version-pinned Python dependencies: `pyjoules==0.5.1` and `prometheus-client==0.23.1`.
 - It copies the application source code into the container.
-- It defines default environment variables:
+- It defines default environment variables that can be overridden in `docker-compose.yml`:
     - `EXPORTER_PORT=9091`: The port on which the `/metrics` endpoint will be exposed.
     - `SCRAPE_INTERVAL_SECONDS=0.1`: The internal measurement interval for `pyJoules`.
 - The `CMD` instruction starts the exporter script when the container runs.

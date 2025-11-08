@@ -4,7 +4,7 @@ This prototype demonstrates the **push model** using Prometheus's remote write f
 
 ## Functionality
 
-Unlike the pull model where Prometheus initiates data collection, this client actively pushes data to a Prometheus-compatible remote write endpoint. This architecture is useful for services where you want the client to control the data transmission rate.
+Unlike the pull model, this client actively pushes data to a Prometheus remote write endpoint. This is useful when the client should control the data transmission rate.
 
 The client operates with two main threads:
 1.  **Sampler:** A thread that collects power consumption data at a regular, high-frequency interval (`SAMPLING_PERIOD_S`).
@@ -33,12 +33,11 @@ This is the Protocol Buffers (protobuf) definition file for the Prometheus remot
 
 ### `Dockerfile`
 - It uses a `python:3.11-slim` base image.
-- **Multi-stage Build Logic:**
-    1.  It first installs all dependencies, including `grpcio-tools`, which contains the protobuf compiler.
-    2.  It copies the `remote.proto` file.
-    3.  It runs the `protoc` compiler to generate the `remote_pb2.py` file from `remote.proto`.
-    4.  It copies the application source code.
+- **Build Process:**
+    1.  It first installs all dependencies, including `grpcio-tools` for the protobuf compiler.
+    2.  It copies the `remote.proto` file and runs the compiler to generate the necessary `remote_pb2.py` file.
+    3.  It copies the application source code.
 - **Environment Variables:**
-    - `SAMPLING_PERIOD_S=0.1`: The interval for data collection.
-    - `BATCH_SIZE=100`: The number of samples to batch together before sending.
-    - `REMOTE_WRITE_URL`: The full URL to the Prometheus remote write endpoint. This is pre-configured to `http://localhost:9090/api/v1/write`.
+    - `SAMPLING_PERIOD_S`: The interval for data collection.
+    - `BATCH_SIZE`: The number of samples to batch together before sending.
+    - `REMOTE_WRITE_URL`: The full URL to the Prometheus remote write endpoint. This is configured in the `docker-compose.yml` file to point to `http://prometheus:9090/api/v1/write`.

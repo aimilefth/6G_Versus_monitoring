@@ -25,7 +25,7 @@ scrape_configs:
     # metrics_path defaults to '/metrics'
     # scheme defaults to 'http'.
     static_configs:
-      - targets: ["localhost:9090"]
+      - targets: ["prometheus:9090"]
        # The label name is added as a label `label_name=<label_value>` to any timeseries scraped from this config.
         labels:
           app: "prometheus"
@@ -36,11 +36,11 @@ scrape_configs:
     # Docker's internal DNS will resolve this to the container's IP
     # because both containers are on the 'monitoring-net' network.
     static_configs:
-      - targets: ["localhost:9091"]
+      - targets: ["pyjoules-metrics-client-simple:9091"]
 
   - job_name: "pyjoules_multirate"
     # The container name 'pyjoules-client' is used as the hostname.
     # Docker's internal DNS will resolve this to the container's IP
     # because both containers are on the 'monitoring-net' network.
     static_configs:
-      - targets: ["localhost:9092"]
+      - targets: ["pyjoules-metrics-client-multirate:9092"]

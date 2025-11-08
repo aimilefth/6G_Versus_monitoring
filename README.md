@@ -11,6 +11,7 @@ The primary goal is to compare and contrast different metric collection strategi
 
 ```
 .
+├── .env
 ├── docker-compose.yml
 ├── get_code_in_txt.py
 ├── grafana
@@ -54,6 +55,9 @@ This project is entirely containerized using Docker and orchestrated with Docker
 *   Docker installed and running.
 *   Docker Compose installed.
 
+### Configuration
+Before starting the stack, you can customize ports, image versions, and client behavior by editing the `.env` file located in the root of the project. This file is the central place for all configuration.
+
 ### Running the Stack
 To start all services (Prometheus, Grafana, and the three metric exporters), run the following command from the root of the project directory:
 
@@ -68,7 +72,7 @@ Once the containers are running, you can access the services in your web browser
     *   You can use the expression browser to query metrics like `pyjoules_simple_energy_watts`, `pyjoules_multirate_energy_uj`, and `pyjoules_remote_write_energy_uj`.
 *   **Grafana UI:** [http://localhost:3000](http://localhost:3000)
     *   Default credentials: `admin` / `admin`. You will be prompted to change the password on first login.
-    *   You will need to configure a Prometheus data source pointing to `http://localhost:9090` and build dashboards to visualize the data.
+    *   You will need to configure a Prometheus data source. Use `http://prometheus:9090` as the URL, since Grafana and Prometheus are on the same Docker network. You can then build dashboards to visualize the data.
 
 To stop all services, run:
 ```bash
@@ -77,12 +81,13 @@ docker-compose down
 
 ## Implemented Scenario
 
-The `docker-compose.yml` file orchestrates a complete monitoring scenario:
-1.  **Prometheus** is started as the central time-series database. Its configuration (`prometheus.yml`) is set to scrape the `simple` and `multirate` clients every 2 seconds. It is also configured with the `remote-write-receiver` enabled to accept data from the `remote-write` client.
-2.  **Grafana** is started as the visualization platform, ready to be configured with Prometheus as a data source.
-3.  **Three PyJoules Clients** are run simultaneously, each demonstrating a different method of sending data to Prometheus:
-    *   `pyjoules-metrics-client-simple`: Exposes metrics on `localhost:9091`, scraped by Prometheus.
-    *   `pyjoules-metrics-client-multirate`: Exposes higher-frequency metrics on `localhost:9092`, also scraped by Prometheus.
-    *   `pyjoules-metrics-client-remote-write`: Independently collects and pushes metrics directly to Prometheus's remote write endpoint.
+The `docker-compose.yml` file orchestrates a complete monitoring scenario using a dedicated bridge network called `monitoring` for inter-service communication.
 
-This setup allows for direct comparison of the data resolution, resource usage, and architectural trade-offs of each metric collection method.
+1.  **Prometheus** is started as the central time-series database. Its configuration (`prometheus.yml`) is set to scrape the `simple` and `multirate` clients every 2 seconds by using their service names (e.g., `pyjoules-metrics-client-simple:9091`). It is also configured with the `remote-write-receiver` enabled to accept data from the `remote-write` client.
+2.  **Grafana** is started as the visualization platform. It connects to Prometheus over the `monitoring` network.
+3.  **Three PyJoules Clients** are run simultaneously, each on the `monitoring` network and demonstrating a different method of sending data to Prometheus:
+    *   `pyjoules-metrics-client-simple`: Exposes metrics on port `9091`, scraped by Prometheus.
+    *   `pyjoules-metrics-client-multirate`: Exposes higher-frequency metrics on port `9092`, also scraped by Prometheus.
+    *   `pyjoules-metrics-client-remote-write`: Independently collects and pushes metrics directly to Prometheus's remote write endpoint, addressing it as `http://prometheus:9090/api/v1/write`.
+
+This setup allows for direct comparison of the data resolution, resource usage, and architectural trade-offs of each metric collection method within an isolated, containerized environment.
