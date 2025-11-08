@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Run the pyJoules client container
-docker run \ --name pyjoules-metrics-client-simple \
+docker run --name pyjoules-metrics-client-simple \
   -d \
   --network=host \
   --privileged \

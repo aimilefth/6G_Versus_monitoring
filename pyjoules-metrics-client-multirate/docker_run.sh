@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Run the pyJoules client container
-docker run \ --name pyjoules-metrics-client-multirate \
+docker run --name pyjoules-metrics-client-multirate \
   -d \
   --network=host \
   --privileged \

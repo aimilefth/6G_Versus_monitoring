@@ -1,9 +1,9 @@
-FROM python:3.11-alpine
+FROM python:3.11-slim
 
 WORKDIR /app
 
 # Install dependencies
-RUN pip install --no-cache-dir pyjoules prometheus-client
+RUN pip install --no-cache-dir pyjoules==0.5.1 prometheus-client==0.23.1
     
 # Copy the application source code
 COPY power_scraper.py .

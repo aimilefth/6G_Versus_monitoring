@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Run the pyJoules client container
-docker run \ --name pyjoules-metrics-client-remote-write \
+docker run --name pyjoules-metrics-client-remote-write \
   -d \
   --network=host \
   --privileged \
