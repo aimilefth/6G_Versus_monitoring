@@ -13,15 +13,14 @@ The primary goal is to compare and contrast different metric collection strategi
 .
 ├── .env
 ├── docker-compose.yml
-├── get_code_in_txt.py
 ├── grafana
 │   ├── README.md
 │   └── docker_run.sh
-├── monitoring.txt
 ├── prometheus
-│   ├── README.md
 │   ├── docker_run.sh
-│   └── prometheus.yml
+│   ├── entrypoint.sh
+│   ├── prometheus.yml.unused
+│   └── README.md
 ├── pyjoules-metrics-client-multirate
 │   ├── Dockerfile
 │   ├── README.md
@@ -37,14 +36,13 @@ The primary goal is to compare and contrast different metric collection strategi
 │   ├── power_scraper.py
 │   ├── remote.proto
 │   └── remote_write_pusher.py
-├── pyjoules-metrics-client-simple
-│   ├── Dockerfile
-│   ├── README.md
-│   ├── docker_build.sh
-│   ├── docker_run.sh
-│   ├── power_scraper.py
-│   └── prometheus_client_exporter.py
-└── tree.txt
+└── pyjoules-metrics-client-simple
+    ├── Dockerfile
+    ├── README.md
+    ├── docker_build.sh
+    ├── docker_run.sh
+    ├── power_scraper.py
+    └── prometheus_client_exporter.py
 ```
 
 ## How to Run the Project
@@ -83,7 +81,7 @@ docker-compose down
 
 The `docker-compose.yml` file orchestrates a complete monitoring scenario using a dedicated bridge network called `monitoring` for inter-service communication.
 
-1.  **Prometheus** is started as the central time-series database. Its configuration (`prometheus.yml`) is set to scrape the `simple` and `multirate` clients every 2 seconds by using their service names (e.g., `pyjoules-metrics-client-simple:9091`). It is also configured with the `remote-write-receiver` enabled to accept data from the `remote-write` client.
+1.  **Prometheus** is started as the central time-series database. Its configuration is dynamically generated on startup by the `prometheus/entrypoint.sh` script, which uses variables from the `.env` file. This script configures Prometheus to scrape the `simple` and `multirate` clients using their service names (e.g., `pyjoules-metrics-client-simple:9091`) and enables the `remote-write-receiver` to accept data from the `remote-write` client.
 2.  **Grafana** is started as the visualization platform. It connects to Prometheus over the `monitoring` network.
 3.  **Three PyJoules Clients** are run simultaneously, each on the `monitoring` network and demonstrating a different method of sending data to Prometheus:
     *   `pyjoules-metrics-client-simple`: Exposes metrics on port `9091`, scraped by Prometheus.

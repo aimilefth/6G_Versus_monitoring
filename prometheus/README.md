@@ -19,16 +19,19 @@ In this project, its key responsibilities are:
 The Prometheus service is defined in the main `docker-compose.yml` file with the following key settings:
 - **`image: ${PROMETHEUS_IMAGE}`**: Specifies the official Prometheus Docker image, configured via the `.env` file.
 - **`networks: - monitoring`**: Connects Prometheus to the custom bridge network, allowing it to communicate with other services using their service names.
-- **`volumes`**: The local `prometheus.yml` configuration file is mounted into the container at `/etc/prometheus/prometheus.yml`.
-- **`command`**:
-    - `--config.file=/etc/prometheus/prometheus.yml`: Tells Prometheus where to find its configuration file.
-    - `--web.enable-remote-write-receiver`: Activates the endpoint that allows clients to push data directly to Prometheus.
+- **`volumes`**: The local `entrypoint.sh` script is mounted into the container at `/entrypoint.sh`.
+- **`entrypoint`**: The container is configured to run the `/entrypoint.sh` script on startup. This script generates the `prometheus.yml` configuration file and then starts the Prometheus process.
+- **`environment`**: Environment variables from the `.env` file are passed to the container to customize the generated configuration.
 
-### `prometheus.yml`
+### `entrypoint.sh`
 
-This file defines what and how Prometheus should monitor.
-- **`global.scrape_interval: 2s`**: Sets the default frequency for scraping targets.
+This script is the core of the service's configuration. Instead of using a static `prometheus.yml` file, this script dynamically generates one inside the container when it starts. This allows for flexible configuration using environment variables from the `.env` file (e.g., setting the scrape interval). After generating the config, it starts Prometheus with the `--web.enable-remote-write-receiver` flag activated, which is necessary for the push-based client.
+
+### Generated `prometheus.yml`
+
+The `entrypoint.sh` script produces a `prometheus.yml` file with the following structure:
+- **`global.scrape_interval`**: Sets the frequency for scraping targets, customized by the `PROMETHEUS_SCRAPE_INTERVAL` variable.
 - **`scrape_configs`**: This section defines the monitoring jobs.
-    - **`job_name: "prometheus"`**: The first job is for Prometheus to monitor itself, using its service name `prometheus:9090`.
-    - **`job_name: "pyjoules_simple"`**: This job tells Prometheus to scrape our simple client. The target is `pyjoules-metrics-client-simple:9091`, using Docker's internal DNS to resolve the service name to the correct container IP.
-    - **`job_name: "pyjoules_multirate"`**: This job defines the scraping configuration for the multirate client, available at `pyjoules-metrics-client-multirate:9092`.
+    - **`job_name: "prometheus"`**: The first job is for Prometheus to monitor itself.
+    - **`job_name: "pyjoules_simple"`**: This job tells Prometheus to scrape the simple client. The target is `pyjoules-metrics-client-simple:${CLIENT_SIMPLE_EXPORTER_PORT}`.
+    - **`job_name: "pyjoules_multirate"`**: This job defines the scraping configuration for the multirate client, targeting `pyjoules-metrics-client-multirate:${CLIENT_MULTIRATE_EXPORTER_PORT}`.
