@@ -16,15 +16,21 @@ def get_power(output_queue, scrape_interval_s, stop_event):
 
 def process_data(input_queue, output_queue, stop_event):
     """
-    Dummy pass-through. Real images may normalize/aggregate here.
+    New contract:
+    - remote_write_pusher expects *normalized* records.
+    - this dummy implementation just forwards whatever it sees, so nothing will be sent.
     """
-    log.warning("Using dummy monitor_impl.process_data() – nothing to process.")
+    log.warning(
+        "Dummy process_data() – remote_write_pusher expects normalized records, "
+        "but this dummy does not produce any."
+    )
     while not stop_event.is_set():
         try:
-            item = input_queue.get(timeout=1)
+            _ = input_queue.get(timeout=1)
         except Empty:
             continue
+        # drop on the floor; this is just a base stub
         try:
-            output_queue.put(item, timeout=1)
+            output_queue.put([], timeout=1)
         except Full:
-            log.warning("process_data: output queue full; dropping item")
+            pass

@@ -1,3 +1,5 @@
+# cpu-pyjoules/monitor_impl.py
+import os
 import time
 import datetime
 import logging
@@ -7,6 +9,9 @@ from pyJoules.energy_meter import measure_energy
 from pyJoules.handler import EnergyHandler
 
 log = logging.getLogger("cpu-pyjoules")
+
+METRIC_DEFAULT = os.getenv("METRIC_DEFAULT", "pyjoules_remote_write_energy_uj")
+SERVICE_LABEL  = os.getenv("SERVICE_LABEL", "cpu-pyjoules")
 
 
 class NoSampleProcessedError(Exception):
@@ -56,6 +61,16 @@ class power_scraper:
         return data
 
 
+def _iso_to_ms(iso_str: str) -> int:
+    # allow "2025-11-09T08:47:30.123456" kind of strings
+    dt = datetime.datetime.fromisoformat(iso_str)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    else:
+        dt = dt.astimezone(datetime.timezone.utc)
+    return int(dt.timestamp() * 1000)
+
+
 # ─────────────────────────────
 # API expected by base image
 # ─────────────────────────────
@@ -75,17 +90,59 @@ def get_power(output_queue: queue.Queue, scrape_interval_s: float, stop_event):
         # scraper.get_power already slept for interval, so no extra sleep
 
 
+# ─────────────────────────────
+# processor (now does normalization)
+# ─────────────────────────────
 def process_data(input_queue: queue.Queue, output_queue: queue.Queue, stop_event):
     """
-    For now: pass-through, as you requested.
+    Convert pyJoules-shaped dicts to *normalized* Prometheus records.
     """
-    log.info("cpu-pyjoules process_data thread started (pass-through)")
+    log.info("cpu-pyjoules process_data thread started (normalizing)")
     while not stop_event.is_set():
         try:
-            item = input_queue.get(timeout=1)
+            raw = input_queue.get(timeout=1)
         except queue.Empty:
             continue
+
+        if not isinstance(raw, dict) or "timestamp" not in raw:
+            log.warning("process_data: unexpected raw record %r", raw)
+            continue
+
+        ts_ms = _iso_to_ms(raw["timestamp"])
+        raw.pop("tag", None)
+        duration = raw.pop("duration", None)
+        raw.pop("timestamp", None)
+
+        normalized_batch = []
+
+        for component, uj_val in raw.items():
+            try:
+                v = float(uj_val)
+            except (TypeError, ValueError):
+                continue
+
+            normalized_batch.append(
+                {
+                    "metric": METRIC_DEFAULT,
+                    "labels": {
+                        "component": str(component),
+                        "source": SERVICE_LABEL,
+                    },
+                    "value": v,
+                    "timestamp_ms": ts_ms,
+                }
+            )
+
+        # you could also emit duration as a separate metric here if you want
+        # e.g. pyjoules_remote_write_duration_s
+        # if duration is not None:
+        #     normalized_batch.append(...)
+
+        if not normalized_batch:
+            continue
+
         try:
-            output_queue.put(item, timeout=1)
+            # we push the whole list and let the pusher flatten it
+            output_queue.put(normalized_batch, timeout=1)
         except queue.Full:
-            log.warning("process_data: processed queue full; dropping item")
+            log.warning("process_data: processed queue full; dropping batch")

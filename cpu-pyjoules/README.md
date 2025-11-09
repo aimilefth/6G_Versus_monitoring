@@ -22,7 +22,7 @@ So this is the image your `docker-compose.yml` runs as `cpu-pyjoules`.
    }
 	```
 
-3. That dictionary goes through the base client's normalizer, which turns it into Prometheus remote-write time series:
+3. That dictionary is converted **in `process_data(...)` of this client** into Prometheus remote-write time series:
 
    * metric: `pyjoules_remote_write_energy_uj`
    * labels: `component=package-0`, `source=cpu-pyjoules`

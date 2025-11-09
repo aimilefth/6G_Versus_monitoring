@@ -6,7 +6,7 @@ You run this in a container, and it:
 
 1. spins up two worker threads from a module called `monitor_impl`,
 2. collects whatever those threads produce,
-3. normalizes it into Prometheus remote-write time series,
+3. **expects** `process_data(...)` to output **already normalized** Prometheus remote-write records,
 4. batches and **pushes** it to Prometheus every `PUSH_INTERVAL_S` seconds,
 5. retries failed batches.
 
@@ -26,7 +26,6 @@ The main script is `remote_write_pusher.py`. On startup it:
    - `monitor_impl.process_data(raw_queue, proc_queue, stop_event)`
 3. every `PUSH_INTERVAL_S` seconds:
    - drain `proc_queue`
-   - call `normalize_record(...)` on each item
    - build a protobuf `WriteRequest`
    - compress with snappy
    - POST to Prometheus
@@ -57,10 +56,6 @@ The **cpu-pyjoules** client overwrites this with a real pyJoules collector.
 
 ## Accepted record formats
 
-The normalizer supports **two** shapes:
-
-1. **Already normalized**:
-
    ```json
    {
      "metric": "my_metric",
@@ -71,26 +66,6 @@ The normalizer supports **two** shapes:
    ```
 
    → sent 1:1
-
-2. **pyJoules-like** (what pyJoules returns):
-
-   ```json
-   {
-     "timestamp": "2025-11-09T08:47:30.123456",
-     "duration": 0.1,
-     "package-0": 12345,
-     "core": 6789,
-     "dram": 42
-   }
-   ```
-
-   → expanded to **1 time series per component** with metric
-   `pyjoules_remote_write_energy_uj` (or the value of `METRIC_DEFAULT`).
-
-Labels added:
-
-* `component=<key from the dict>`
-* `source=<SERVICE_LABEL>`
 
 ---
 

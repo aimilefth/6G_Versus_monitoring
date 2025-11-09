@@ -67,11 +67,7 @@ This modular approach separates the generic "how to send data" logic from the sp
 
    * **collector**: uses pyJoules every `SCRAPE_INTERVAL_S` to read energy,
    * **processor**: currently pass-through.
-2. The **base monitoring client** (already inside the image) normalizes the records into:
-
-   * metric name: `pyjoules_remote_write_energy_uj` (default)
-   * labels: `component=<rapl domain>`, `source=cpu-pyjoules`
-   * timestamp: original pyJoules timestamp, in ms
+2. 2. The **cpu-pyjoules client’s `process_data()`** converts the pyJoules dictionaries into normalized Prometheus records (one time series per energy domain). The **base monitoring client** then just batches and remote-writes them.
 3. Every `PUSH_INTERVAL_S` seconds the client **pushes** a remote-write batch to Prometheus.
 4. Prometheus stores it, Grafana displays it.
 
