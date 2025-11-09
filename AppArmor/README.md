@@ -64,7 +64,7 @@ So we need **two** things:
 From the root of the project:
 
 ```bash
-cd apparmor
+cd AppArmor
 sudo ./setup_docker-pyjoules.sh
 ```
 
