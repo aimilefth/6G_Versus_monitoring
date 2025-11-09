@@ -12,12 +12,12 @@ import snappy
 from remote_pb2 import WriteRequest, Sample
 import monitor_impl  # provided/overridden by derived image
 
-REMOTE_WRITE_URL   = os.getenv("REMOTE_WRITE_URL", "http://prometheus:9090/api/v1/write")
-PUSH_INTERVAL_S    = float(os.getenv("PUSH_INTERVAL_S", "4"))
-MAX_RETRY_BATCHES  = int(os.getenv("MAX_RETRY_BATCHES", "5"))
-RAW_QUEUE_SIZE     = int(os.getenv("RAW_QUEUE_SIZE", "1000"))
-PROC_QUEUE_SIZE    = int(os.getenv("PROC_QUEUE_SIZE", "1000"))
-LOG_LEVEL          = os.getenv("LOG_LEVEL", "INFO").upper()
+REMOTE_WRITE_URL = os.getenv("REMOTE_WRITE_URL", "http://prometheus:9090/api/v1/write")
+PUSH_INTERVAL_S = float(os.getenv("PUSH_INTERVAL_S", "4"))
+MAX_RETRY_BATCHES = int(os.getenv("MAX_RETRY_BATCHES", "5"))
+RAW_QUEUE_SIZE = int(os.getenv("RAW_QUEUE_SIZE", "1000"))
+PROC_QUEUE_SIZE = int(os.getenv("PROC_QUEUE_SIZE", "1000"))
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
 logging.basicConfig(
     level=LOG_LEVEL,
@@ -42,10 +42,12 @@ def build_write_request(records):
         try:
             metric = rec["metric"]
             labels = rec.get("labels", {})
-            ts_ms  = int(rec["timestamp_ms"])
-            value  = float(rec["value"])
+            ts_ms = int(rec["timestamp_ms"])
+            value = float(rec["value"])
         except (KeyError, ValueError, TypeError) as e:
-            log.warning("build_write_request: bad normalized record %r (%s) - dropping", rec, e)
+            log.warning(
+                "build_write_request: bad normalized record %r (%s) - dropping", rec, e
+            )
             continue
 
         label_items = [("__name__", metric)] + sorted(labels.items())
@@ -137,7 +139,9 @@ def main():
                         if isinstance(sub, dict):
                             normalized_records.append(sub)
                         else:
-                            log.warning("processor emitted non-dict inside list: %r", sub)
+                            log.warning(
+                                "processor emitted non-dict inside list: %r", sub
+                            )
                 else:
                     log.warning("processor emitted non-dict: %r", item)
 
@@ -167,7 +171,9 @@ def main():
                     retry_batches.append(batch)
                     while len(retry_batches) > MAX_RETRY_BATCHES:
                         _ = retry_batches.popleft()
-                        log.warning("Dropping oldest retry batch due to MAX_RETRY_BATCHES")
+                        log.warning(
+                            "Dropping oldest retry batch due to MAX_RETRY_BATCHES"
+                        )
     except KeyboardInterrupt:
         log.info("Shutting down ...")
         stop_event.set()

@@ -5,6 +5,7 @@ from queue import Empty, Full
 
 log = logging.getLogger("monitor_impl")
 
+
 def get_power(output_queue, scrape_interval_s, stop_event):
     """
     Dummy implementation. Real images must overwrite this file
@@ -13,6 +14,7 @@ def get_power(output_queue, scrape_interval_s, stop_event):
     log.warning("Using dummy monitor_impl.get_power() – no data will be produced.")
     while not stop_event.is_set():
         time.sleep(scrape_interval_s)
+
 
 def process_data(input_queue, output_queue, stop_event):
     """

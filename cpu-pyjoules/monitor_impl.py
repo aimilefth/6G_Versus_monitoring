@@ -11,7 +11,7 @@ from pyJoules.handler import EnergyHandler
 log = logging.getLogger("cpu-pyjoules")
 
 METRIC_DEFAULT = os.getenv("METRIC_DEFAULT", "pyjoules_remote_write_energy_uj")
-SERVICE_LABEL  = os.getenv("SERVICE_LABEL", "cpu-pyjoules")
+SERVICE_LABEL = os.getenv("SERVICE_LABEL", "cpu-pyjoules")
 
 
 class NoSampleProcessedError(Exception):
