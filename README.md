@@ -59,6 +59,8 @@ This modular approach separates the generic "how to send data" logic from the sp
 * Pushes remote-write data to Prometheus
 * Labeled in metrics as `source="cpu-pyjoules"`
 
+If you rebuild the images yourself, the provided `docker_build.sh` in `base-monitoring-client/` is already set up to use `docker buildx build` and push a multi-platform image (`linux/amd64`, `linux/arm64`). Therefore you need to install [`Docker buildx`](https://github.com/docker/buildx).
+
 ---
 
 ## The data flow

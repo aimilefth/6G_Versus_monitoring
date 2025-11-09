@@ -91,7 +91,7 @@ cd base-monitoring-client
 ./docker_build.sh
 ```
 
-This produces/pushes `aimilefth/base-monitoring-client`.
+The provided script uses `docker buildx build` to build and push a multi-platform image (`linux/amd64`, `linux/arm64`) as `aimilefth/base-monitoring-client`.
 
 You then `FROM` that image in your concrete client (see `cpu-pyjoules/Dockerfile`).
 
