@@ -5,8 +5,6 @@ set -eu
 : "${PROMETHEUS_SCRAPE_INTERVAL:=2}"
 : "${PROMETHEUS_EVALUATE_INTERVAL:=1}"
 : "${PROMETHEUS_TARGET:=prometheus:9090}"
-: "${CLIENT_SIMPLE_EXPORTER_PORT:=9091}"
-: "${CLIENT_MULTIRATE_EXPORTER_PORT:=9092}"
 
 # -------- write out the real config file -----------------------------
 cat > /etc/prometheus/prometheus.yml <<EOF
@@ -18,14 +16,6 @@ scrape_configs:
   - job_name: "prometheus"
     static_configs:
       - targets: ["${PROMETHEUS_TARGET}"]
-
-  - job_name: "pyjoules_simple"
-    static_configs:
-      - targets: ["pyjoules-metrics-client-simple:${CLIENT_SIMPLE_EXPORTER_PORT}"]
-
-  - job_name: "pyjoules_multirate"
-    static_configs:
-      - targets: ["pyjoules-metrics-client-multirate:${CLIENT_MULTIRATE_EXPORTER_PORT}"]
 EOF
 
 # -------- start prometheus ------------------------------------------

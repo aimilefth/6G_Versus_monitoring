@@ -1,99 +1,171 @@
 # Power Consumption Monitoring with Prometheus, Grafana, and PyJoules
 
-This project demonstrates a complete monitoring infrastructure for capturing, storing, and visualizing power consumption metrics from x86 systems using PyJoules. It showcases three different architectural patterns for exporting metrics to a Prometheus time-series database, which can then be visualized using Grafana.
+This project provides a complete, containerized monitoring infrastructure for capturing, storing, and visualizing power consumption metrics from x86 systems using [PyJoules](https://github.com/powerapi-ng/pyJoules).
 
-The primary goal is to compare and contrast different metric collection strategies:
-1.  **Simple Pull-Based:** A standard approach where Prometheus scrapes a client endpoint at a fixed interval.
-2.  **Multirate Pull-Based:** An advanced pull method where the client samples data at a high frequency internally and delivers a batch of timestamped metrics upon each Prometheus scrape.
-3.  **Push-Based (Remote Write):** A model where the client actively pushes data to Prometheus, decoupling the collection rate from Prometheus's scrape configuration.
+Following a significant refactor, the project now demonstrates a robust and modular **push-based (Remote Write)** architecture. This design decouples the monitoring clients from the Prometheus server, allowing them to collect data at a high frequency and push it efficiently in batches.
+
+
+## Architectural Overview
+
+The new architecture is designed for extensibility and clarity:
+
+1.  **`base-monitoring-client`**: A generic base Docker image that contains all the core logic for a robust remote-write client. It manages a multi-threaded pipeline for data collection, processing, batching, and pushing to Prometheus, complete with a retry mechanism for network resilience.
+2.  **`cpu-pyjoules`**: A concrete monitoring client that extends the `base-monitoring-client`. It provides the specific implementation for gathering CPU power data using the `pyJoules` library. New clients for different metrics (e.g., GPU, system stats) can be easily created by following this pattern.
+3.  **Prometheus**: The central time-series database, configured to accept data via its remote-write endpoint. It no longer actively scrapes the monitoring clients.
+4.  **Grafana**: The visualization platform, pre-configured with a dashboard to display the power consumption data stored in Prometheus.
+
+This modular approach separates the generic "how to send data" logic from the specific "what data to collect" logic, making the system cleaner and easier to maintain.
+
+---
 
 ## Project Structure
 
-```
+```text
 .
-├── .env
+├── AppArmor/                 # custom profile to let a container read RAPL
+├── base-monitoring-client/   # generic remote-write client (pushes to Prometheus)
+├── cpu-pyjoules/             # concrete pyJoules-based monitoring client
+├── grafana/                  # preprovisioned dashboard + datasource
+├── prometheus/               # dynamic entrypoint, remote-write enabled
 ├── docker-compose.yml
-├── grafana
-│   ├── dashboards
-│   │   └── pyjoules.json
-│   ├── docker_run.sh
-│   ├── grafana.ini
-│   ├── provisioning
-│   │   ├── dashboards
-│   │   │   └── pyjoules.dash.yml
-│   │   └── datasources
-│   │       └── pyjoules.prom.yml
-│   └── README.md
-├── prometheus
-│   ├── docker_run.sh
-│   ├── entrypoint.sh
-│   ├── prometheus.yml.unused
-│   └── README.md
-├── pyjoules-metrics-client-multirate
-│   ├── Dockerfile
-│   ├── README.md
-│   ├── docker_build.sh
-│   ├── docker_run.sh
-│   ├── power_scraper.py
-│   └── prometheus_client_exporter.py
-├── pyjoules-metrics-client-remote-write
-│   ├── Dockerfile
-│   ├── README.md
-│   ├── docker_build.sh
-│   ├── docker_run.sh
-│   ├── power_scraper.py
-│   ├── remote.proto
-│   └── remote_write_pusher.py
-└── pyjoules-metrics-client-simple
-    ├── Dockerfile
-    ├── README.md
-    ├── docker_build.sh
-    ├── docker_run.sh
-    ├── power_scraper.py
-    └── prometheus_client_exporter.py
+├── docker-compose.privileged.yml
+├── docker-compose_helper.sh  # wrapper that decides privileged vs AppArmor
+├── .env                      # central configuration
+└── README.md                 # this file
 ```
+---
 
-## How to Run the Project
+## Services
 
-This project is entirely containerized using Docker and orchestrated with Docker Compose, making it easy to set up and run.
+### 1. Prometheus
 
-### Prerequisites
-*   Docker installed and running.
-*   Docker Compose installed.
+* Image: configurable via `.env` (`PROMETHEUS_IMAGE=prom/prometheus:v3.5.0`)
+* Generates its `prometheus.yml` at startup from env vars.
+* Exposes `:9090` on the host.
+* **Remote-write receiver enabled** so clients can push.
 
-### Configuration
-Before starting the stack, you can customize ports, image versions, and client behavior by editing the `.env` file located in the root of the project. This file is the central place for all configuration.
+### 2. Grafana
 
-### Running the Stack
-To start all services (Prometheus, Grafana, and the three metric exporters), run the following command from the root of the project directory:
+* Image: configurable via `.env`
+* Preprovisioned datasource + dashboard under `grafana/`.
+* Exposes `:3000` on the host.
+* Runs as the UID/GID from `.env` so you can persist data on the host.
+
+### 3. `cpu-pyjoules`
+
+* Image: `aimilefth/cpu-pyjoules` (built from `cpu-pyjoules/`)
+* Inherits from `aimilefth/base-monitoring-client`
+* Reads RAPL from the host under `/sys/.../powercap/...`
+* Pushes remote-write data to Prometheus
+* Labeled in metrics as `source="cpu-pyjoules"`
+
+---
+
+## The data flow
+
+1. **`cpu-pyjoules`** (container) runs two threads:
+
+   * **collector**: uses pyJoules every `SCRAPE_INTERVAL_S` to read energy,
+   * **processor**: currently pass-through.
+2. The **base monitoring client** (already inside the image) normalizes the records into:
+
+   * metric name: `pyjoules_remote_write_energy_uj` (default)
+   * labels: `component=<rapl domain>`, `source=cpu-pyjoules`
+   * timestamp: original pyJoules timestamp, in ms
+3. Every `PUSH_INTERVAL_S` seconds the client **pushes** a remote-write batch to Prometheus.
+4. Prometheus stores it, Grafana displays it.
+
+---
+
+## Configuration
+
+Everything lives in `.env`:
+
+Key ones:
+
+* **`CLIENT_CPU_PYJOULES_URL`**: where to remote-write (inside Docker network, so `http://prometheus:9090/...`).
+* **`CLIENT_CPU_PYJOULES_SCRAPE_INTERVAL_S`**: how often pyJoules samples (inside the container).
+* **`CLIENT_CPU_PYJOULES_PUSH_INTERVAL_S`**: how often the client sends a remote-write batch.
+* **`PRIVILEGED`**: if set to `True`/`true` in `.env`, the helper will add `docker-compose.privileged.yml`, otherwise we rely on AppArmor.
+
+## Running
+
+We now recommend using the helper script because it respects `.env` and the privileged toggle:
 
 ```bash
-docker-compose up -d
+./docker-compose_helper.sh up -d
 ```
-This command will pull the necessary Docker images and start all the containers in detached mode.
 
-### Accessing the Services
-Once the containers are running, you can access the services in your web browser:
-*   **Prometheus UI:** [http://localhost:9090](http://localhost:9090)
-    *   You can use the expression browser to query metrics like `pyjoules_simple_energy_watts`, `pyjoules_multirate_energy_uj`, and `pyjoules_remote_write_energy_uj`.
-*   **Grafana UI:** [http://localhost:3000](http://localhost:3000)
-    *   Default credentials: `admin` / `6GVERSUS`.
-    *   The Prometheus data source and a basic dashboard are automatically provisioned. No manual setup is needed.
+This will:
 
-To stop all services, run:
+* create the `monitoring` network,
+* start Prometheus,
+* start Grafana,
+* start `cpu-pyjoules` with the right AppArmor profile (or privileged, depending on `.env`).
+
+To stop:
+
 ```bash
-docker-compose down
+./docker-compose_helper.sh down
 ```
 
-## Implemented Scenario
+---
 
-The `docker-compose.yml` file orchestrates a complete monitoring scenario using a dedicated bridge network called `monitoring` for inter-service communication.
+## Host requirements
 
-1.  **Prometheus** is started as the central time-series database. Its configuration is dynamically generated on startup by the `prometheus/entrypoint.sh` script, which uses variables from the `.env` file. This script configures Prometheus to scrape the `simple` and `multirate` clients using their service names (e.g., `pyjoules-metrics-client-simple:9091`) and enables the `remote-write-receiver` to accept data from the `remote-write` client.
-2.  **Grafana** is started as the visualization platform. It connects to Prometheus over the `monitoring` network.
-3.  **Three PyJoules Clients** are run simultaneously, each on the `monitoring` network and demonstrating a different method of sending data to Prometheus:
-    *   `pyjoules-metrics-client-simple`: Exposes metrics on port `9091`, scraped by Prometheus.
-    *   `pyjoules-metrics-client-multirate`: Exposes higher-frequency metrics on port `9092`, also scraped by Prometheus.
-    *   `pyjoules-metrics-client-remote-write`: Independently collects and pushes metrics directly to Prometheus's remote write endpoint, addressing it as `http://prometheus:9090/api/v1/write`.
+* Docker / Docker Compose plugin
+* A host that actually exposes power/energy counters under:
 
-This setup allows for direct comparison of the data resolution, resource usage, and architectural trade-offs of each metric collection method within an isolated, containerized environment.
+  * `/sys/class/powercap`
+  * `/sys/devices/virtual/powercap`
+* Either:
+
+  * run the client **privileged** (`PRIVILEGED=True`), **or**
+  * install the provided AppArmor profile:
+
+    ```bash
+    cd AppArmor
+    sudo ./setup_docker-pyjoules.sh
+    ```
+
+  and keep this in your `docker-compose.yml` (already present):
+
+  ```yaml
+  security_opt:
+    - apparmor=docker-pyjoules
+    - systempaths=unconfined
+  ```
+
+---
+
+## Extending the stack
+
+The point of `base-monitoring-client/` is that you can build a *different* monitoring container with almost no code:
+
+1. Create a new directory (e.g. `gpu-telem/`).
+
+2. `FROM aimilefth/base-monitoring-client:latest`
+
+3. COPY your own `monitor_impl.py` that implements:
+
+   ```python
+   def get_power(output_queue, scrape_interval_s, stop_event): ...
+   def process_data(input_queue, output_queue, stop_event): ...
+   ```
+
+4. Add a service to `docker-compose.yml` with the right volumes/envs.
+
+5. It will push to Prometheus automatically.
+
+---
+
+## Metrics you’ll see
+
+By default the client emits **one time series per energy domain**, for example:
+
+* `pyjoules_remote_write_energy_uj{component="package-0",source="cpu-pyjoules"}`
+* `pyjoules_remote_write_energy_uj{component="core",source="cpu-pyjoules"}`
+
+Use those in Prometheus/Grafana queries.
+
+---

@@ -7,10 +7,9 @@ This directory contains the configuration for the Prometheus service.
 Prometheus serves as the core of the monitoring stack. It is a powerful open-source monitoring and alerting toolkit that collects and stores its metrics as time-series data.
 
 In this project, its key responsibilities are:
-1.  **Data Storage:** Acting as the central database for all power consumption metrics collected by the PyJoules clients.
-2.  **Data Collection (Pull):** Periodically "scraping" the HTTP `/metrics` endpoints exposed by the `pyjoules-metrics-client-simple` and `pyjoules-metrics-client-multirate` services to pull in new data.
-3.  **Data Reception (Push):** Receiving data pushed from the `pyjoules-metrics-client-remote-write` service via the remote write API.
-4.  **Data Source for Grafana:** Providing the stored time-series data to Grafana for visualization and analysis.
+1.  **Data Storage:** Acting as the central database for all power consumption metrics collected by the monitoring clients.
+2.  **Data Reception (Push):** Receiving data pushed from the `cpu-pyjoules` service via the remote write API.
+3.  **Data Source for Grafana:** Providing the stored time-series data to Grafana for visualization and analysis.
 
 ## Service Configuration
 
@@ -32,6 +31,4 @@ This script is the core of the service's configuration. Instead of using a stati
 The `entrypoint.sh` script produces a `prometheus.yml` file with the following structure:
 - **`global.scrape_interval`**: Sets the frequency for scraping targets, customized by the `PROMETHEUS_SCRAPE_INTERVAL` variable.
 - **`scrape_configs`**: This section defines the monitoring jobs.
-    - **`job_name: "prometheus"`**: The first job is for Prometheus to monitor itself.
-    - **`job_name: "pyjoules_simple"`**: This job tells Prometheus to scrape the simple client. The target is `pyjoules-metrics-client-simple:${CLIENT_SIMPLE_EXPORTER_PORT}`.
-    - **`job_name: "pyjoules_multirate"`**: This job defines the scraping configuration for the multirate client, targeting `pyjoules-metrics-client-multirate:${CLIENT_MULTIRATE_EXPORTER_PORT}`.
+    - **`job_name: "prometheus"`**: The job is for Prometheus to monitor itself.
