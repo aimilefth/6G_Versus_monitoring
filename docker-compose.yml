@@ -20,6 +20,15 @@ services:
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
 
+    healthcheck:
+      # use wget instead of curl
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/ready >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
   grafana:
     image: ${GRAFANA_IMAGE:-grafana/grafana:12.0.2}
     container_name: grafana
@@ -34,12 +43,17 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning
       - ./grafana/dashboards:/etc/grafana/dashboards
 
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
   cpu-pyjoules:
     image: aimilefth/cpu-pyjoules
     pull_policy: always
-    # Use this if wanting to build all the time
-    # build:
-    #   context: ./cpu-pyjoules
     container_name: cpu-pyjoules
     volumes:
       - /sys/class/powercap:/sys/class/powercap:ro
@@ -56,3 +70,20 @@ services:
       - MAX_RETRY_BATCHES=${CLIENT_CPU_PYJOULES_MAX_RETRY_BATCHES:-5}
       - SERVICE_LABEL=cpu-pyjoules
       - LOG_LEVEL=${CLIENT_CPU_PYJOULES_LOG_LEVEL:-INFO}
+
+    # NEW ↓
+    # the cpu-pyjoules image is based on python:3.11-slim,
+    # which *does* have Python but not necessarily curl,
+    # so we probe Prometheus using Python stdlib instead of curl.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >
+          python -c "import urllib.request,sys;
+          urllib.request.urlopen('http://prometheus:9090/-/healthy', timeout=3);
+          sys.exit(0)"
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped

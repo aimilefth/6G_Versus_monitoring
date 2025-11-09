@@ -28,7 +28,7 @@ log = logging.getLogger("base-monitoring-client")
 
 def build_write_request(records):
     """
-    records: iterable of *already normalized* records:
+    records: iterable of normalized records:
        {
          "metric": str,
          "labels": dict[str,str],
@@ -67,6 +67,7 @@ def build_write_request(records):
 
 
 def push_write_request(session: requests.Session, req: WriteRequest):
+    """Send the protobuf to Prometheus and log response text on errors."""
     payload = snappy.compress(req.SerializeToString())
     headers = {
         "Content-Encoding": "snappy",
@@ -74,39 +75,49 @@ def push_write_request(session: requests.Session, req: WriteRequest):
         "X-Prometheus-Remote-Write-Version": "0.1.0",
     }
     resp = session.post(REMOTE_WRITE_URL, data=payload, headers=headers, timeout=5)
-    resp.raise_for_status()
+    try:
+        resp.raise_for_status()
+    except requests.HTTPError:
+        detail = resp.text.strip()
+        if detail:
+            log.error("Remote write HTTP %s: %s", resp.status_code, detail[:500])
+        else:
+            log.error("Remote write HTTP %s with empty response body", resp.status_code)
+        raise
     return resp
 
 
 def start_pipeline(scrape_interval_s: float):
+    """Start collector + processor threads and return the queues + stop event + threads."""
     raw_queue = queue.Queue(maxsize=RAW_QUEUE_SIZE)
     proc_queue = queue.Queue(maxsize=PROC_QUEUE_SIZE)
     stop_event = threading.Event()
 
-    # collector
-    threading.Thread(
+    collector_thread = threading.Thread(
         target=monitor_impl.get_power,
         args=(raw_queue, scrape_interval_s, stop_event),
         daemon=True,
         name="get_power_thread",
-    ).start()
-
-    # processor (now expected to output *normalized* records)
-    threading.Thread(
+    )
+    processor_thread = threading.Thread(
         target=monitor_impl.process_data,
         args=(raw_queue, proc_queue, stop_event),
         daemon=True,
         name="process_data_thread",
-    ).start()
+    )
+
+    collector_thread.start()
+    processor_thread.start()
 
     log.info("Started get_power and process_data threads")
-    return proc_queue, stop_event
+    # return the threads so the main loop can watch them
+    return proc_queue, stop_event, [collector_thread, processor_thread]
 
 
 def main():
-    # we still read the collector interval from monitor_impl (like before)
+    # collector interval
     scrape_interval_s = float(os.getenv("SCRAPE_INTERVAL_S", "0.1"))
-    proc_queue, stop_event = start_pipeline(scrape_interval_s)
+    proc_queue, stop_event, worker_threads = start_pipeline(scrape_interval_s)
 
     retry_batches = deque()
     session = requests.Session()
@@ -114,11 +125,21 @@ def main():
     log.info("Remote write loop started: push every %ss", PUSH_INTERVAL_S)
 
     try:
-        while True:
+        # run until we're told to stop (or a worker dies)
+        while not stop_event.is_set():
+            # ---- worker health guard ----
+            for t in worker_threads:
+                if not t.is_alive():
+                    log.error("Worker thread %s died; stopping pipeline", t.name)
+                    stop_event.set()
+                    break
+            if stop_event.is_set():
+                break
+
+            # ---- collect records until next push ----
             deadline = time.time() + PUSH_INTERVAL_S
             current_items = []
 
-            # drain proc_queue until deadline
             while True:
                 remaining = deadline - time.time()
                 if remaining <= 0:
@@ -129,7 +150,7 @@ def main():
                 except queue.Empty:
                     continue
 
-            # flatten current_items into normalized_records
+            # ---- normalize (flatten) what processor gave us ----
             normalized_records = []
             for item in current_items:
                 if isinstance(item, dict):
@@ -145,16 +166,19 @@ def main():
                 else:
                     log.warning("processor emitted non-dict: %r", item)
 
-            # build list of batches to try: stale retries first
+            # start with old retry batches
             batches_to_try = []
             while retry_batches:
                 batches_to_try.append(retry_batches.popleft())
+
+            # and add the fresh one
             if normalized_records:
                 batches_to_try.append(normalized_records)
 
             if not batches_to_try:
                 continue
 
+            # ---- push batches ----
             for batch in batches_to_try:
                 if not batch:
                     continue
@@ -174,6 +198,7 @@ def main():
                         log.warning(
                             "Dropping oldest retry batch due to MAX_RETRY_BATCHES"
                         )
+
     except KeyboardInterrupt:
         log.info("Shutting down ...")
         stop_event.set()
