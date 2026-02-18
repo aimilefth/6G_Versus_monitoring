@@ -18,7 +18,7 @@ services:
       - PROMETHEUS_EVALUATE_INTERVAL=${PROMETHEUS_EVALUATE_INTERVAL:-1}
       - PROMETHEUS_PORT=${PROMETHEUS_PORT:-9090}
     ports:
-      - "${PROMETHEUS_PORT:-9090}:9090"
+      - "0.0.0.0:${PROMETHEUS_PORT:-9090}:9090"
 
     healthcheck:
       # use wget instead of curl
@@ -63,8 +63,11 @@ services:
       - systempaths=unconfined
     networks:
       - monitoring
+    extra_hosts:
+    - "host.docker.internal:host-gateway"
+
     environment:
-      - REMOTE_WRITE_URL=${CLIENT_CPU_PYJOULES_URL:-http://prometheus:9090/api/v1/write}
+      - REMOTE_WRITE_URL=http://${CLIENT_CPU_PROMETHEUS_EXTERNAL_HOST:-host.docker.internal}:${CLIENT_CPU_PROMETHEUS_EXTERNAL_PORT:-9090}/api/v1/write
       - SCRAPE_INTERVAL_S=${CLIENT_CPU_PYJOULES_SCRAPE_INTERVAL_S:-0.1}
       - PUSH_INTERVAL_S=${CLIENT_CPU_PYJOULES_PUSH_INTERVAL_S:-4}
       - MAX_RETRY_BATCHES=${CLIENT_CPU_PYJOULES_MAX_RETRY_BATCHES:-5}
