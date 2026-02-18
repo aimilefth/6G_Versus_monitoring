@@ -1,0 +1,52 @@
+version: '3.8'
+
+networks:
+  monitoring:
+    driver: bridge
+
+services:
+  prometheus:
+    image: ${PROMETHEUS_IMAGE:-prom/prometheus:v3.5.0}
+    container_name: prometheus
+    networks:
+      - monitoring
+    volumes:
+      - ./prometheus/entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["/entrypoint.sh"]
+    environment:
+      - PROMETHEUS_SCRAPE_INTERVAL=${PROMETHEUS_SCRAPE_INTERVAL:-2}
+      - PROMETHEUS_EVALUATE_INTERVAL=${PROMETHEUS_EVALUATE_INTERVAL:-1}
+      - PROMETHEUS_PORT=${PROMETHEUS_PORT:-9090}
+    ports:
+      - "0.0.0.0:${PROMETHEUS_PORT:-9090}:9090"
+
+    healthcheck:
+      # use wget instead of curl
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/ready >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+  grafana:
+    image: ${GRAFANA_IMAGE:-grafana/grafana:12.0.2}
+    container_name: grafana
+    pull_policy: always
+    user: "${UID:-1001}:${GID:-1001}"
+    networks:
+      - monitoring
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - ./grafana/grafana.ini:/etc/grafana/grafana.ini
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/etc/grafana/dashboards
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped

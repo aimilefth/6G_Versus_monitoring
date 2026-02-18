@@ -15,10 +15,10 @@ In this project, Grafana's role is to:
 
 ### `docker-compose.yml`
 
-The Grafana service is defined in the main `docker-compose.yml` file:
-- **`image: ${GRAFANA_IMAGE}`**: Specifies the official Grafana Docker image, configured via the `.env` file.
+The Grafana service is defined in the `server/docker-compose.yml` file:
+- **`image: ${GRAFANA_IMAGE}`**: Specifies the official Grafana Docker image, configured via the `server/.env` file.
 - **`networks: - monitoring`**: Connects Grafana to the same bridge network as Prometheus, enabling them to communicate.
-- **`user: "${UID:-1001}:${GID:-1001}"`**: This ensures that Grafana runs as the current host user, preventing permission issues. The UID and GID can be set in the `.env` file.
+- **`user: "${UID:-1001}:${GID:-1001}"`**: This ensures that Grafana runs as the current host user, preventing permission issues. The UID and GID can be set in the `server/.env` file.
 - **`volumes`**: Key configuration files are mounted from the host into the container. This enables a declarative, version-controllable setup.
     - `./grafana/grafana.ini`: Custom settings for the Grafana instance.
     - `./grafana/provisioning`: Contains YAML files that automatically configure data sources and dashboard providers on startup.

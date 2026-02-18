@@ -2,17 +2,34 @@
 
 This project provides a complete, containerized monitoring infrastructure for capturing, storing, and visualizing power consumption metrics from x86 systems using [PyJoules](https://github.com/powerapi-ng/pyJoules).
 
-Following a significant refactor, the project now demonstrates a robust and modular **push-based (Remote Write)** architecture. This design decouples the monitoring clients from the Prometheus server, allowing them to collect data at a high frequency and push it efficiently in batches.
+The architecture is **push-based (Prometheus Remote Write)**: monitoring clients collect at high frequency and **push** batches to a Prometheus server. Grafana reads from Prometheus for dashboards.
 
 
 ## Architectural Overview
 
-The new architecture is designed for extensibility and clarity:
+The repo is split into **stacks** so you can deploy:
 
-1.  **`base-monitoring-client`**: A generic base Docker image that contains all the core logic for a robust remote-write client. It manages a multi-threaded pipeline for data collection, processing, batching, and pushing to Prometheus, complete with a retry mechanism for network resilience.
-2.  **`cpu-pyjoules`**: A concrete monitoring client that extends the `base-monitoring-client`. It provides the specific implementation for gathering CPU power data using the `pyJoules` library. New clients for different metrics (e.g., GPU, system stats) can be easily created by following this pattern.
-3.  **Prometheus**: The central time-series database, configured to accept data via its remote-write endpoint. It no longer actively scrapes the monitoring clients.
-4.  **Grafana**: The visualization platform, pre-configured with a dashboard to display the power consumption data stored in Prometheus.
+- a **server stack** (Prometheus + Grafana) on one machine, and
+- multiple **client stacks** (CPU, GPU, etc.) on many machines.
+
+Core components:
+
+1. **`base-monitoring-client/`**  
+   A generic remote-write client runtime:
+   - runs worker threads from a `monitor_impl.py`,
+   - batches normalized records,
+   - pushes them to Prometheus with retry logic.
+
+2. **Client stacks** (first one: `cpu-pyjoules/`)  
+   Each client stack:
+   - ships its own `docker-compose.yml` + `.env`,
+   - defines where Prometheus is reachable “from the outside”,
+   - optionally runs privileged or under AppArmor.
+
+3. **`server/`**  
+   Runs:
+   - **Prometheus** with remote-write receiver enabled,
+   - **Grafana** with a pre-provisioned datasource + dashboard.
 
 This modular approach separates the generic "how to send data" logic from the specific "what data to collect" logic, making the system cleaner and easier to maintain.
 
@@ -24,32 +41,35 @@ This modular approach separates the generic "how to send data" logic from the sp
 .
 ├── AppArmor/                 # custom profile to let a container read RAPL
 ├── base-monitoring-client/   # generic remote-write client (pushes to Prometheus)
-├── cpu-pyjoules/             # concrete pyJoules-based monitoring client
-├── grafana/                  # preprovisioned dashboard + datasource
-├── prometheus/               # dynamic entrypoint, remote-write enabled
-├── docker-compose.yml
-├── docker-compose.privileged.yml
-├── docker-compose_helper.sh  # wrapper that decides privileged vs AppArmor
-├── .env                      # central configuration
+├── cpu-pyjoules/             # The specific client logic for PyJoules
+│   ├── docker/               # Dockerfile and Python implementation for this client
+│   └── ...                   # Docker Compose files
+├── server/ 
+│   ├── grafana/              # preprovisioned dashboard + datasource
+│   ├── prometheus/           # dynamic entrypoint, remote-write enabled
+    └── ...                   # Docker Compose files
+├── docker-compose-helper.sh  # run one or more stacks with -s flags
 └── README.md                 # this file
 ```
 ---
 
-## Services
+## Stacks and configuration
 
-### 1. Prometheus
+### 1) `server/` (Prometheus + Grafana)
 
-* Image: configurable via `.env` (`PROMETHEUS_IMAGE=prom/prometheus:v3.5.0`)
-* Generates its `prometheus.yml` at startup from env vars.
-* Exposes `:9090` on the host.
-* **Remote-write receiver enabled** so clients can push.
+* `server/docker-compose.yml`
+* `server/.env`
+* Prometheus listens on the host port (`PROMETHEUS_PORT`, default 9090)
+* Grafana listens on the host port (`GRAFANA_PORT`, default 3000)
 
-### 2. Grafana
+### 2) `cpu-pyjoules/` (CPU client)
 
-* Image: configurable via `.env`
-* Preprovisioned datasource + dashboard under `grafana/`.
-* Exposes `:3000` on the host.
-* Runs as the UID/GID from `.env` so you can persist data on the host.
+* `cpu-pyjoules/docker-compose.yml`
+* `cpu-pyjoules/.env`
+* Pushes to Prometheus via a host-reachable address:
+
+  * `CLIENT_CPU_PROMETHEUS_HOST`
+  * `CLIENT_CPU_PROMETHEUS_PORT`
 
 ### 3. `cpu-pyjoules`
 
@@ -63,7 +83,7 @@ If you rebuild the images yourself, the provided `docker_build.sh` in `base-moni
 
 ---
 
-## The data flow
+### The data flow
 
 1. **`cpu-pyjoules`** (container) runs two threads:
 
@@ -75,9 +95,9 @@ If you rebuild the images yourself, the provided `docker_build.sh` in `base-moni
 
 ---
 
-## Configuration
+### Configuration
 
-Everything lives in `.env`:
+Everything lives in the respective stack's `.env`:
 
 Key ones:
 
@@ -88,23 +108,37 @@ Key ones:
 
 ## Running
 
-We now recommend using the helper script because it respects `.env` and the privileged toggle:
+This repo includes a helper that can start/stop multiple stacks:
 
 ```bash
-./docker-compose_helper.sh up -d
+./docker-compose-helper.sh -s server up -d
+./docker-compose-helper.sh -s cpu-pyjoules up -d
+./docker-compose-helper.sh -s server -s cpu-pyjoules up -d
 ```
 
-This will:
-
-* create the `monitoring` network,
-* start Prometheus,
-* start Grafana,
-* start `cpu-pyjoules` with the right AppArmor profile (or privileged, depending on `.env`).
-
-To stop:
+Stopping:
 
 ```bash
-./docker-compose_helper.sh down
+./docker-compose-helper.sh -s server -s cpu-pyjoules down
+```
+
+The helper `cd`s into each stack directory and runs `docker compose` there, so each stack uses its local `.env`.
+
+---
+
+## Deploying clients to other machines
+
+To move a client to another host:
+
+1. Clone this repo on the client machine.
+2. Edit `cpu-pyjoules/.env`:
+
+   * set `CLIENT_CPU_PROMETHEUS_HOST` to the server’s public IP/DNS
+   * keep `CLIENT_CPU_PROMETHEUS_PORT` the exposed Prometheus port (default 9090)
+3. Run only that client stack:
+
+```bash
+./docker-compose-helper.sh -s cpu-pyjoules up -d
 ```
 
 ---
@@ -140,20 +174,19 @@ To stop:
 
 The point of `base-monitoring-client/` is that you can build a *different* monitoring container with almost no code:
 
-1. Create a new directory (e.g. `gpu-telem/`).
+1. Create a new stack directory (e.g. `gpu-smi/`) with:
 
-2. `FROM aimilefth/base-monitoring-client:latest`
+   * `docker-compose.yml`
+   * `.env`
 
-3. COPY your own `monitor_impl.py` that implements:
+2. Create a `docker/` subdir for its image build:
 
-   ```python
-   def get_power(output_queue, scrape_interval_s, stop_event): ...
-   def process_data(input_queue, output_queue, stop_event): ...
-   ```
+   * `docker/Dockerfile` based on `aimilefth/base-monitoring-client:latest`
+   * `docker/monitor_impl.py` implementing:
 
-4. Add a service to `docker-compose.yml` with the right volumes/envs.
-
-5. It will push to Prometheus automatically.
+     ```python
+     def get_power(output_queue, scrape_interval_s, stop_event): ...
+     def process_data(input_queue, output_queue, stop_event): ...
 
 ---
 

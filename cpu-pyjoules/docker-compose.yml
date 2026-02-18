@@ -1,0 +1,46 @@
+version: '3.8'
+
+networks:
+  monitoring:
+    driver: bridge
+
+services:
+  cpu-pyjoules:
+    image: aimilefth/cpu-pyjoules
+    pull_policy: always
+    container_name: cpu-pyjoules
+    volumes:
+      - /sys/class/powercap:/sys/class/powercap:ro
+      - /sys/devices/virtual/powercap:/sys/devices/virtual/powercap:ro
+    security_opt:
+      - apparmor=docker-pyjoules
+      - systempaths=unconfined
+    networks:
+      - monitoring
+    extra_hosts:
+    - "host.docker.internal:host-gateway"
+
+    environment:
+      - REMOTE_WRITE_URL=http://${CLIENT_CPU_PROMETHEUS_HOST:-host.docker.internal}:${CLIENT_CPU_PROMETHEUS_PORT:-9090}/api/v1/write
+      - SCRAPE_INTERVAL_S=${CLIENT_CPU_PYJOULES_SCRAPE_INTERVAL_S:-0.1}
+      - PUSH_INTERVAL_S=${CLIENT_CPU_PYJOULES_PUSH_INTERVAL_S:-4}
+      - MAX_RETRY_BATCHES=${CLIENT_CPU_PYJOULES_MAX_RETRY_BATCHES:-5}
+      - SERVICE_LABEL=${CLIENT_CPU_SERVICE_LABEL:-cpu-pyjoules}
+      - LOG_LEVEL=${CLIENT_CPU_PYJOULES_LOG_LEVEL:-INFO}
+
+    # NEW ↓
+    # the cpu-pyjoules image is based on python:3.11-slim,
+    # which *does* have Python but not necessarily curl,
+    # so we probe Prometheus using Python stdlib instead of curl.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >
+          python -c "import urllib.request,sys;
+          urllib.request.urlopen('http://${CLIENT_CPU_PROMETHEUS_HOST:-host.docker.internal}:${CLIENT_CPU_PROMETHEUS_PORT:-9090}/-/healthy', timeout=3);
+          sys.exit(0)"
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped

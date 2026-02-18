@@ -15,7 +15,7 @@ In this project, its key responsibilities are:
 
 ### `docker-compose.yml`
 
-The Prometheus service is defined in the main `docker-compose.yml` file with the following key settings:
+The Prometheus service is defined in the `server/docker-compose.yml` file with the following key settings:
 - **`image: ${PROMETHEUS_IMAGE}`**: Specifies the official Prometheus Docker image, configured via the `.env` file.
 - **`networks: - monitoring`**: Connects Prometheus to the custom bridge network, allowing it to communicate with other services using their service names.
 - **`volumes`**: The local `entrypoint.sh` script is mounted into the container at `/entrypoint.sh`.
@@ -24,7 +24,7 @@ The Prometheus service is defined in the main `docker-compose.yml` file with the
 
 ### `entrypoint.sh`
 
-This script is the core of the service's configuration. Instead of using a static `prometheus.yml` file, this script dynamically generates one inside the container when it starts. This allows for flexible configuration using environment variables from the `.env` file (e.g., setting the scrape interval). After generating the config, it starts Prometheus with the `--web.enable-remote-write-receiver` flag activated, which is necessary for the push-based client.
+This script is the core of the service's configuration. Instead of using a static `prometheus.yml` file, this script dynamically generates one inside the container when it starts. This allows for flexible configuration using environment variables from the `server/.env` file (e.g., setting the scrape interval). After generating the config, it starts Prometheus with the `--web.enable-remote-write-receiver` flag activated, which is necessary for the push-based client.
 
 ### Generated `prometheus.yml`
 

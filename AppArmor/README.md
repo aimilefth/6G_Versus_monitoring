@@ -74,9 +74,9 @@ You should see `docker-pyjoules` listed if you run:
 sudo aa-status | grep docker-pyjoules
 ```
 
-## How to use in docker-compose
+## Use with a client stack
 
-In your `docker-compose.yml` add to the **pyJoules** client container:
+In your stack/`docker-compose.yml` add to the client container:
 
 ```yaml
   pyjoules-metrics-client-remote-write:

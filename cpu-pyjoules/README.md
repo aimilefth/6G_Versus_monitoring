@@ -1,10 +1,33 @@
-# cpu-pyjoules
+# cpu-pyjoules (client stack)
 
-A concrete monitoring client that:
-- inherits the generic push/batching logic from **`aimilefth/base-monitoring-client`**,
-- and replaces `monitor_impl.py` with a real **pyJoules** collector.
+This is the first concrete monitoring client stack and acts as a template for creating more clients.
 
-So this is the image your `docker-compose.yml` runs as `cpu-pyjoules`.
+It:
+
+- runs a container that reads CPU energy from host RAPL counters (via PyJoules),
+- converts raw PyJoules output into **normalized** Prometheus remote-write records,
+- pushes batches to a Prometheus server reachable via a **host/public address** (not Docker DNS)
+
+---
+
+## What’s in this directory
+
+- `docker-compose.yml`  
+  Runs the client container and points it to Prometheus using:
+  - `CLIENT_CPU_PROMETHEUS_HOST`
+  - `CLIENT_CPU_PROMETHEUS_PORT`
+
+- `docker-compose.privileged.yml`  
+  Optional overlay enabling privileged mode (controlled by `PRIVILEGED=True` in `.env`)
+
+- `.env`  
+  Client-specific configuration (scrape interval, push interval, Prometheus host/port)
+
+- `docker/`  
+  Image build context:
+  - `docker/Dockerfile` (extends `aimilefth/base-monitoring-client`)
+  - `docker/monitor_impl.py` (PyJoules collector + normalization)
+  - `docker/docker_build.sh`
 
 ---
 
@@ -45,26 +68,29 @@ So the only “extra” over the base image is: **install pyJoules** and **drop 
 
 ---
 
-## Environment variables (as used in compose)
+## Configuration (`cpu-pyjoules/.env`)
 
-From the root `.env`:
+Key variables:
 
-```ini
-REMOTE_WRITE_URL=http://prometheus:9090/api/v1/write
-SCRAPE_INTERVAL_S=0.1
-PUSH_INTERVAL_S=4
-MAX_RETRY_BATCHES=5
-SERVICE_LABEL=cpu-pyjoules
-LOG_LEVEL=INFO
-```
+- `CLIENT_CPU_PROMETHEUS_HOST`  
+  Where Prometheus is reachable from this client.  
+  Same-machine default: `host.docker.internal`  
+  Remote-machine: set to server public IP/DNS.
 
-Meaning:
+- `CLIENT_CPU_PROMETHEUS_PORT`  
+  Prometheus host port (default `9090`)
 
-* **`REMOTE_WRITE_URL`** — where to push (inside Docker network, so we use the service name `prometheus`)
-* **`SCRAPE_INTERVAL_S`** — pyJoules measurement period
-* **`PUSH_INTERVAL_S`** — how often to send a remote-write batch
-* **`MAX_RETRY_BATCHES`** — survive short Prometheus outages
-* **`SERVICE_LABEL`** — ends up as `source=cpu-pyjoules` in your time series
+- `CLIENT_CPU_SCRAPE_INTERVAL_S`  
+  PyJoules measurement interval
+
+- `CLIENT_CPU_PUSH_INTERVAL_S`  
+  How often to push batches
+
+- `CLIENT_CPU_MAX_RETRY_BATCHES`  
+  How many failed batches to keep in memory while Prometheus is down
+
+- `PRIVILEGED`  
+  If `True`, the helper script will merge `docker-compose.privileged.yml`
 
 ---
 
@@ -81,35 +107,23 @@ security_opt:
   - systempaths=unconfined
 ```
 
-Alternatively, set `PRIVILEGED=True` in `.env` and use the helper script — then `docker-compose.privileged.yml` will be merged and the service will run privileged.
-
----
-
-## Building
-
-```bash
-cd cpu-pyjoules
-./docker_build.sh
-```
-
-This builds and pushes `aimilefth/cpu-pyjoules`.
+Alternatively, set `PRIVILEGED=True` in `cpu-pyjoules/.env` and use the helper script — then `docker-compose.privileged.yml` will be merged and the service will run privileged.
 
 ---
 
 ## Running (via main compose)
 
-The root `docker-compose.yml` already defines:
-
-```yaml
-cpu-pyjoules:
-  image: aimilefth/cpu-pyjoules
-  ...
-```
-
-So from the repo root:
+With the repo helper:
 
 ```bash
-./docker-compose_helper.sh up -d
+./docker-compose-helper.sh -s cpu-pyjoules up -d
+```
+
+Or directly:
+
+```bash
+cd cpu-pyjoules
+docker compose up -d
 ```
 
 You should then see in Prometheus time series such as:
@@ -117,5 +131,18 @@ You should then see in Prometheus time series such as:
 * `pyjoules_remote_write_energy_uj{component="package-0",source="cpu-pyjoules"}`
 * `pyjoules_remote_write_energy_uj{component="core",source="cpu-pyjoules"}`
 * `pyjoules_remote_write_energy_uj{component="uncore",source="cpu-pyjoules"}` (depending on the machine)
+
+---
+
+## Building the image
+
+The Docker build context is `cpu-pyjoules/docker/`:
+
+```bash
+cd cpu-pyjoules/docker
+./docker_build.sh
+```
+
+This builds/pushes `aimilefth/cpu-pyjoules` (as configured in the script).
 
 ---
