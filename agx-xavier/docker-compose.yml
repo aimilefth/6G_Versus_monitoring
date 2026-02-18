@@ -1,4 +1,4 @@
-version: '3.8'
+version: '3.3'
 
 networks:
   monitoring:
@@ -8,9 +8,8 @@ services:
   agx-xavier:
     image: ${CLIENT_AGX_XAVIER_IMAGE:-aimilefth/6gversus-monitoring:agx-xavier}
     # Jetson AGX Xavier is ARM64:
-    platform: linux/arm64
-    pull_policy: always
-    container_name: agx-xavier
+    # pull_policy: always
+    # container_name: agx-xavier
     networks:
       - monitoring
     # privileged: ${AGX_XAVIER_PRIVILEGED:-false}
@@ -45,6 +44,6 @@ services:
       interval: 15s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      # start_period: 10s
 
     restart: unless-stopped

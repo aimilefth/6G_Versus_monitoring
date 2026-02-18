@@ -45,9 +45,9 @@ class power_scraper:
         total_power = 0
         for (address, channel, name) in zip(self.address, self.channel, self.name):
             # Values from files are milli
-            v = int(get_value_from_read(f'/sys/bus/i2c/devices/1-004{address}/iio:device{address}/in_voltage{channel}_input'))/1000
-            i = int(get_value_from_read(f'/sys/bus/i2c/devices/1-004{address}/iio:device{address}/in_current{channel}_input'))/1000
-            p = int(get_value_from_read(f'/sys/bus/i2c/devices/1-004{address}/iio:device{address}/in_power{channel}_input'))/1000
+            v = int(get_value_from_read(f'/sys/bus/i2c/devices/1-004{address}/hwmon/hwmon{address+4}/in{channel+1}_input'))/1000
+            i = int(get_value_from_read(f'/sys/bus/i2c/devices/1-004{address}/hwmon/hwmon{address+4}/curr{channel+1}_input'))/1000
+            p = v * i
             temp_dir = {'Voltage': v, 'Current': i, 'Power': p}
             power[name] = temp_dir
             total_power = total_power + p
