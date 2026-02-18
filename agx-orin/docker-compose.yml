@@ -1,0 +1,50 @@
+version: '3.8'
+
+networks:
+  monitoring:
+    driver: bridge
+
+services:
+  agx-orin:
+    image: ${CLIENT_AGX_ORIN_IMAGE:-aimilefth/6gversus-monitoring:agx-orin}
+    # Jetson AGX Orin is ARM64:
+    platform: linux/arm64
+    pull_policy: always
+    container_name: agx-orin
+    networks:
+      - monitoring
+    # privileged: ${AGX_ORIN_PRIVILEGED:-false}
+    # sysfs access (read-only). These paths are used by the INA3221 driver.
+    volumes:
+      - /sys/bus/i2c/drivers/ina3221:/sys/bus/i2c/drivers/ina3221:ro
+      - /sys/class/hwmon:/sys/class/hwmon:ro
+
+    # # Docker masks some system paths; this can make sysfs files appear "missing".
+    # security_opt:
+    #   - systempaths=unconfined
+    environment:
+      - REMOTE_WRITE_URL=http://${CLIENT_AGX_PROMETHEUS_HOST:-host.docker.internal}:${CLIENT_AGX_PROMETHEUS_PORT:-9090}/api/v1/write
+      - SCRAPE_INTERVAL_S=${CLIENT_AGX_SCRAPE_INTERVAL_S:-0.2}
+      - PUSH_INTERVAL_S=${CLIENT_AGX_PUSH_INTERVAL_S:-4}
+      - MAX_RETRY_BATCHES=${CLIENT_AGX_MAX_RETRY_BATCHES:-5}
+      - LOG_LEVEL=${CLIENT_AGX_LOG_LEVEL:-INFO}
+      - SERVICE_LABEL=${CLIENT_AGX_SERVICE_LABEL:-agx-orin}
+
+      # metric names (optional overrides)
+      # - METRIC_POWER_W=agx_orin_power_watts
+      # - METRIC_VOLTAGE_V=agx_orin_voltage_volts
+      # - METRIC_CURRENT_A=agx_orin_current_amps
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >
+          python -c "import urllib.request,sys;
+          urllib.request.urlopen('http://${CLIENT_AGX_PROMETHEUS_HOST:-host.docker.internal}:${CLIENT_AGX_PROMETHEUS_PORT:-9090}/-/healthy', timeout=3);
+          sys.exit(0)"
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    restart: unless-stopped
