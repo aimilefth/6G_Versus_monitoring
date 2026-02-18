@@ -3,6 +3,21 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Pick compose implementation:
+# - Prefer Docker Compose v2 plugin: "docker compose"
+# - Fall back to legacy v1 binary: "docker-compose"
+if docker compose version >/dev/null 2>&1; then
+  COMPOSE_CMD=(docker compose)
+elif command -v docker-compose >/dev/null 2>&1; then
+  COMPOSE_CMD=(docker-compose)
+else
+  echo "ERROR: Neither 'docker compose' (compose plugin) nor 'docker-compose' is available." >&2
+  echo "Install one of:" >&2
+  echo "  - Ubuntu/Debian: sudo apt-get install docker-compose-plugin" >&2
+  echo "  - or legacy: sudo apt-get install docker-compose" >&2
+  exit 2
+fi
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -93,8 +108,7 @@ run_stack() {
     echo "[*] $stack"
   fi
 
-  docker compose "${files[@]}" "${compose_args[@]}"
-
+  "${COMPOSE_CMD[@]}" "${files[@]}" "${compose_args[@]}"
   popd >/dev/null
 }
 
