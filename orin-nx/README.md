@@ -37,13 +37,13 @@ You can pass variables either by exporting them in your shell or by creating an 
 
 Main variables:
 
-- `CLIENT_AGX_PROMETHEUS_HOST` (default: `host.docker.internal`)
-- `CLIENT_AGX_PROMETHEUS_PORT` (default: `9090`)
-- `CLIENT_AGX_SCRAPE_INTERVAL_S` (default: `0.2`)
-- `CLIENT_AGX_PUSH_INTERVAL_S` (default: `4`)
-- `CLIENT_AGX_MAX_RETRY_BATCHES` (default: `5`)
-- `CLIENT_AGX_LOG_LEVEL` (default: `INFO`)
-- `CLIENT_AGX_SERVICE_LABEL` (default: `orin-nx`)
+- `CLIENT_ORIN_NX_PROMETHEUS_HOST` (default: `host.docker.internal`)
+- `CLIENT_ORIN_NX_PROMETHEUS_PORT` (default: `9090`)
+- `CLIENT_ORIN_NX_SCRAPE_INTERVAL_S` (default: `0.2`)
+- `CLIENT_ORIN_NX_PUSH_INTERVAL_S` (default: `4`)
+- `CLIENT_ORIN_NX_MAX_RETRY_BATCHES` (default: `5`)
+- `CLIENT_ORIN_NX_LOG_LEVEL` (default: `INFO`)
+- `CLIENT_ORIN_NX_SERVICE_LABEL` (default: `orin-nx`)
 
 
 ## Build the image
@@ -57,7 +57,7 @@ cd orin-nx/docker
 
 This builds and pushes an **ARM64** image by default:
 
-* `aimilefth/orin-nx`
+* `aimilefth/6gversus-monitoring:orin-nx`
 
 You can override the image name:
 
