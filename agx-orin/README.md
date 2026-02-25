@@ -19,6 +19,8 @@ And also a total:
 Metric names can be overridden via env:
 - `METRIC_POWER_W`, `METRIC_VOLTAGE_V`, `METRIC_CURRENT_A`
 
+The metrics are described on the [NVIDIA Jetson Linux Developer](https://docs.nvidia.com/jetson/archives/r36.4.3/DeveloperGuide/SD/PlatformPowerAndPerformance/JetsonOrinNanoSeriesJetsonOrinNxSeriesAndJetsonAgxOrinSeries.html#jetson-agx-orin-series)
+
 ## Files
 
 ```
