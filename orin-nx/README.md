@@ -8,9 +8,9 @@ It reads rail telemetry from the INA3221 sysfs entries documented by NVIDIA and 
 
 This client produces three metrics by default:
 
-- `agx_orin_power_watts{component="VDD_IN",source="orin-nx"}`
-- `agx_orin_voltage_volts{component="VDD_IN",source="orin-nx"}`
-- `agx_orin_current_amps{component="VDD_IN",source="orin-nx"}`
+- `orin_nx_power_watts{component="VDD_IN",source="orin-nx"}`
+- `orin_nx_voltage_volts{component="VDD_IN",source="orin-nx"}`
+- `orin_nx_current_amps{component="VDD_IN",source="orin-nx"}`
 
 Metric names can be overridden via env:
 - `METRIC_POWER_W`, `METRIC_VOLTAGE_V`, `METRIC_CURRENT_A`
