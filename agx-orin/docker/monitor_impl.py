@@ -74,7 +74,7 @@ def get_power(output_queue: queue.Queue, scrape_interval_s: float, stop_event):
     log.info("agx-orin get_power thread started (interval=%s)", scrape_interval_s)
 
     while not stop_event.is_set():
-        t0 = time.time()
+        t0 = time.perf_counter()
         data = scraper.get_power()
 
         try:
@@ -83,7 +83,7 @@ def get_power(output_queue: queue.Queue, scrape_interval_s: float, stop_event):
             log.warning("get_power: raw queue full; dropping measurement")
 
         # keep a roughly stable interval (scrape itself takes some time)
-        elapsed = time.time() - t0
+        elapsed = time.perf_counter() - t0
         sleep_s = max(0.0, float(scrape_interval_s) - elapsed)
         if sleep_s:
             time.sleep(sleep_s)
