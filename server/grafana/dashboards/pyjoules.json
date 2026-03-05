@@ -1121,7 +1121,7 @@
     }
   ],
   "preload": false,
-  "refresh": "5s",
+  "refresh": "1s",
   "schemaVersion": 41,
   "tags": [],
   "templating": {
@@ -1131,7 +1131,18 @@
     "from": "now-1m",
     "to": "now"
   },
-  "timepicker": {},
+  "timepicker": {
+    "refresh_intervals": [
+      "250ms",
+      "500ms",
+      "1s",
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m"
+    ]
+  },
   "timezone": "browser",
   "title": "Basic Dashboard",
   "uid": "pyjoules-basic",
