@@ -2,3 +2,5 @@ get_code_in_txt.py
 grafana/grafana-storage
 *.txt
 build.log
+*csv
+*.png

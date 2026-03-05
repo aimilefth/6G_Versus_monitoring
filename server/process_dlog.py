@@ -2,7 +2,7 @@ import pandas as pd
 import re
 from datetime import datetime, timedelta
 
-def process_dlog(input_file, output_file, offset_seconds=0.0):
+def process_dlog(input_file, output_file, offset_seconds=0.0, multiply_sampling_rate=1):
     sample_interval = None
     start_date = None
     skip_lines = 0
@@ -43,15 +43,20 @@ def process_dlog(input_file, output_file, offset_seconds=0.0):
     # Load the tabular data
     df = pd.read_csv(input_file, skiprows=skip_lines)
     
-    # Calculate timestamps using vectorized operation (Start Date + (Sample index * Sample Interval))
-    # This is much faster than apply() and works natively with Pandas datetime tools
+    # Calculate derived power: P = V * I BEFORE averaging to maintain mathematical accuracy
+    df['Power avg 1'] = df['Volt avg 1'] * df['Curr avg 1']
+
+    # Downsample by averaging groups of rows
+    if multiply_sampling_rate > 1:
+        # Group rows by integer division of the index (e.g., rows 0,1,2 become group 0)
+        df = df.groupby(df.index // multiply_sampling_rate).mean()
+    
+    # Calculate timestamps using vectorized operation 
+    # Because df['Sample'] was averaged, the calculated time will correctly be the midpoint of the combined rows
     datetime_series = start_date + pd.to_timedelta(df['Sample'] * sample_interval, unit='s')
     
-    # Format the timestamp as ISO 8601 to match your other CSV (e.g., 2026-03-04T13:47:54.707000Z)
+    # Format the timestamp as ISO 8601
     df['timestamp'] = datetime_series.dt.strftime('%Y-%m-%dT%H:%M:%S.%fZ')
-    
-    # Calculate derived power: P = V * I
-    df['Power avg 1'] = df['Volt avg 1'] * df['Curr avg 1']
     
     # Reorder columns to make 'timestamp' the first column
     cols = ['timestamp'] + [col for col in df.columns if col != 'timestamp']
@@ -59,12 +64,15 @@ def process_dlog(input_file, output_file, offset_seconds=0.0):
     
     # Save the modified dataframe to a new CSV file
     df.to_csv(output_file, index=False)
-    print(f"Processed file saved to {output_file}")
+    print(f"Processed file saved to {output_file} (Averaged {multiply_sampling_rate} rows per sample)")
 
 if __name__ == "__main__":
-    # Example usage: Change offset_seconds as needed
+    # Example usage:
     INPUT_FILE = 'dlog6.csv'
-    OUTPUT_FILE = 'derived_dlog6.csv'
     OFFSET_SECONDS = 0.0
+    MULTIPLY_SAMPLING_RATE = 2.5  # Change this to group more or fewer rows
     
-    process_dlog(INPUT_FILE, OUTPUT_FILE, offset_seconds=OFFSET_SECONDS)
+    # Dynamically generate the output filename based on the multiplier
+    OUTPUT_FILE = f'derived_dlog6_{MULTIPLY_SAMPLING_RATE}.csv'
+    
+    process_dlog(INPUT_FILE, OUTPUT_FILE, offset_seconds=OFFSET_SECONDS, multiply_sampling_rate=MULTIPLY_SAMPLING_RATE)

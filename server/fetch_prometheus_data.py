@@ -8,14 +8,14 @@ from datetime import datetime
 PROMETHEUS_URL = "http://localhost:9090"
 
 # Time window for the data (e.g., '1h', '30m', '1d')
-TIME_WINDOW = "3m"
+TIME_WINDOW = "2m"
 
 # The PromQL selector. We want all timeseries coming from our source.
 # This will match the 9 timeseries from the Xavier-NX (3 metrics * 3 components)
-QUERY = f'{{source=~"xavier-nx.*"}}[{TIME_WINDOW}]'
+# QUERY = f'{{source=~"xavier-nx.*"}}[{TIME_WINDOW}]'
 
 # This will get only the VDD_IN and power_watt values
-# QUERY = f'xavier_nx_power_watts{{component="VDD_IN", source=~"xavier-nx.*"}}[{TIME_WINDOW}]'
+QUERY = f'xavier_nx_power_watts{{component="VDD_IN", source=~"xavier-nx.*"}}[{TIME_WINDOW}]'
 
 # Output CSV configuration
 OUTPUT_CSV = f"prometheus_xavier_nx_data_{TIME_WINDOW}.csv"

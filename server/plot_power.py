@@ -76,13 +76,13 @@ def plot_power_data(prometheus_file, derived_file,
     plt.tight_layout()
     
     # Save plot as a PNG image
-    output_image = 'power_comparison_plot.png'
+    output_image = 'power_comparison_plot_2.5.png'
     plt.savefig(output_image)
     print(f"Plot successfully saved as '{output_image}'")
 
 if __name__ == "__main__":
     PROM_FILE = 'prometheus_xavier_nx_data_2m.csv'
-    DERIVED_FILE = 'derived_dlog6.csv'
+    DERIVED_FILE = 'derived_dlog6_2.5.csv'
     
     # Example 1: Adjust Prometheus timestamps forward by 500,000 microseconds (0.5s)
     PROM_OFFSET_US = 69*1000000
