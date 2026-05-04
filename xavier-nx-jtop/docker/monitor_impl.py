@@ -74,6 +74,77 @@ def _sanitize_component(value: Any) -> str:
 HOST_PROC = Path(os.getenv("HOST_PROC", "/proc"))
 HOST_SYS = Path(os.getenv("HOST_SYS", "/sys"))
 
+def get_value_from_read(path):
+    try:
+        with open(path, 'r') as device_file:
+            return device_file.read()
+    except Exception as e:
+        log.warning("Error in get_value_from_read path=%s: %s", path, e)
+        return None
+
+
+class Ina3221PowerScraper:
+    """
+    INA3221 scraper imported from xavier-nx.
+
+    Important merge rule:
+    - this scraper returns only measured values
+    - it does NOT create a timestamp
+    - the shared scrape-loop timestamp is added by get_power()
+    """
+
+    def __init__(self) -> None:
+        self.name = ['VDD_IN', 'VDD_CPU_GPU_CV', 'VDD_SOC']
+
+        self.address = [0, 0, 0]
+
+        self.channel = [1, 2, 3]
+
+        self.description = [
+            'Total Module Power.',
+            'Total power consumed by CPU, CPU and CV cores i.e. DLA and PVA',
+            'Power consumed by SOC core which supplies to memory subsystem and various engines like nvdec, nvenc, vi, vic, isp etc.',
+        ]
+
+    def get_power(self):
+        power = {}
+
+        for (address, channel, name) in zip(self.address, self.channel, self.name):
+            # Values from files are milli
+            v_raw = get_value_from_read(
+                HOST_SYS / f'bus/i2c/drivers/ina3221/7-004{address}/hwmon/hwmon{address + 5}/in{channel}_input'
+            )
+            i_raw = get_value_from_read(
+                HOST_SYS / f'bus/i2c/drivers/ina3221/7-004{address}/hwmon/hwmon{address + 5}/curr{channel}_input'
+            )
+
+            if v_raw is None or i_raw is None:
+                continue
+
+            try:
+                v = int(v_raw) / 1000
+                i = int(i_raw) / 1000
+            except ValueError:
+                log.warning(
+                    "INA3221 bad values component=%s voltage=%r current=%r",
+                    name,
+                    v_raw,
+                    i_raw,
+                )
+                continue
+
+            p = v * i
+
+            temp_dir = {
+                'Voltage': v,
+                'Current': i,
+                'Power': p,
+            }
+
+            power[name] = temp_dir
+
+        return power
+
 CPU_LINE_RE = re.compile(r"^cpu(\d+)\s+(.*)$")
 KNOWN_GPU_NAMES = {"gv11b", "gp10b", "ga10b", "gb10b", "gpu"}
 
@@ -159,8 +230,14 @@ class DirectJetson:
         self.memory: dict = {}
         self.gpu: dict = {}
         self.temperature: dict = {}
+        self._ina3221_scraper = Ina3221PowerScraper()
+        self._refresh_seq = 0
+        self._ina3221_cache_seq = -1
+        self._ina3221_cache: dict = {}
 
     def refresh(self) -> None:
+        self._refresh_seq += 1
+
         self.cpu = self._read_cpu()
         self.memory = self._read_memory()
         self.gpu = self._read_gpu()
@@ -410,6 +487,25 @@ class DirectJetson:
             out[name] = {"temp": temp_c}
 
         return out
+    
+    def read_ina3221(self) -> dict:
+        """
+        Read INA3221 once per refresh cycle.
+
+        This is important because power, voltage, and current are three different
+        collectors, but they should use the same INA3221 sample inside one scrape.
+        """
+        if self._ina3221_cache_seq == self._refresh_seq:
+            return self._ina3221_cache
+
+        try:
+            self._ina3221_cache = self._ina3221_scraper.get_power()
+        except Exception as e:
+            log.warning("INA3221 scrape failed: %s", e)
+            self._ina3221_cache = {}
+
+        self._ina3221_cache_seq = self._refresh_seq
+        return self._ina3221_cache
 
 
 # ─────────────────────────────
@@ -424,6 +520,9 @@ METRIC_MEMORY_UTIL = os.getenv("METRIC_MEMORY_UTIL", "xavier_nx_memory_util_perc
 METRIC_GPU_UTIL = os.getenv("METRIC_GPU_UTIL", "xavier_nx_gpu_util_percent")
 METRIC_THERMAL = os.getenv("METRIC_THERMAL", "xavier_nx_thermal_celsius")
 METRIC_MEMORY_DETAILS = os.getenv("METRIC_MEMORY_DETAILS","xavier_nx_memory_details_mb")
+METRIC_POWER_W = os.getenv("METRIC_POWER_W", "xavier_nx_power_watts")
+METRIC_VOLTAGE_V = os.getenv("METRIC_VOLTAGE_V", "xavier_nx_voltage_volts")
+METRIC_CURRENT_A = os.getenv("METRIC_CURRENT_A", "xavier_nx_current_amps")
 
 SKIP_OFFLINE_THERMAL = _env_bool("SKIP_OFFLINE_THERMAL", True)
 JTOP_RECONNECT_DELAY_S = _env_float("JTOP_RECONNECT_DELAY_S", 3.0)
@@ -599,6 +698,35 @@ def collect_thermal(jetson) -> dict[str, float]:
 
     return out
 
+def _collect_ina3221_field(jetson, field_name: str) -> dict[str, float]:
+    out: dict[str, float] = {}
+
+    ina = jetson.read_ina3221()
+    if not isinstance(ina, dict):
+        return out
+
+    for component, payload in ina.items():
+        if not isinstance(payload, dict):
+            continue
+
+        value = _safe_float(payload.get(field_name))
+        if value is not None:
+            out[str(component)] = value
+
+    return out
+
+
+def collect_ina_power(jetson) -> dict[str, float]:
+    return _collect_ina3221_field(jetson, "Power")
+
+
+def collect_ina_voltage(jetson) -> dict[str, float]:
+    return _collect_ina3221_field(jetson, "Voltage")
+
+
+def collect_ina_current(jetson) -> dict[str, float]:
+    return _collect_ina3221_field(jetson, "Current")
+
 
 COLLECTORS: list[CollectorSpec] = [
     CollectorSpec(
@@ -636,6 +764,24 @@ COLLECTORS: list[CollectorSpec] = [
         enabled_env="ENABLE_MEMORY_DETAILS",
         interval_env="MEMORY_DETAILS_INTERVAL_S",
         collect_fn=collect_memory_details,
+    ),
+    CollectorSpec(
+        name="ina_power",
+        enabled_env="ENABLE_POWER",
+        interval_env="POWER_INTERVAL_S",
+        collect_fn=collect_ina_power,
+    ),
+    CollectorSpec(
+        name="ina_voltage",
+        enabled_env="ENABLE_VOLTAGE",
+        interval_env="VOLTAGE_INTERVAL_S",
+        collect_fn=collect_ina_voltage,
+    ),
+    CollectorSpec(
+        name="ina_current",
+        enabled_env="ENABLE_CURRENT",
+        interval_env="CURRENT_INTERVAL_S",
+        collect_fn=collect_ina_current,
     ),
 ]
 
@@ -688,6 +834,8 @@ def get_power(raw_queue, scrape_interval_s: float, stop_event) -> None:
 
     while not stop_event.is_set():
         loop_started = time.monotonic()
+
+        # One timestamp for the entire scrape cycle.
         timestamp = _utc_iso()
 
         jetson.refresh()
@@ -724,6 +872,9 @@ def process_data(input_queue: queue.Queue, output_queue: queue.Queue, stop_event
         "gpu_util": METRIC_GPU_UTIL,
         "thermal": METRIC_THERMAL,
         "memory_details": METRIC_MEMORY_DETAILS,
+        "ina_power": METRIC_POWER_W,
+        "ina_voltage": METRIC_VOLTAGE_V,
+        "ina_current": METRIC_CURRENT_A,
     }
 
     while not stop_event.is_set():
