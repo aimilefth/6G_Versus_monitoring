@@ -40,7 +40,7 @@ Defaults:
 
 ```text
 xavier_nx_cpu_util_percent{component="cpu0",source="xavier-nx-jtop-01"}
-xavier_nx_cpu_freq_khz{component="cpu0",source="xavier-nx-jtop-01"}
+xavier_nx_cpu_freq_mhz{component="cpu0",source="xavier-nx-jtop-01"}
 xavier_nx_memory_util_percent{component="RAM",source="xavier-nx-jtop-01"}
 xavier_nx_gpu_util_percent{component="gpu",source="xavier-nx-jtop-01"}
 xavier_nx_thermal_celsius{component="CPU",source="xavier-nx-jtop-01"}
@@ -109,7 +109,7 @@ xavier_nx_cpu_util_percent{source="xavier-nx-jtop-01"}
 CPU frequency per core:
 
 ```promql
-xavier_nx_cpu_freq_khz{source="xavier-nx-jtop-01"}
+xavier_nx_cpu_freq_mhz{source="xavier-nx-jtop-01"}
 ```
 
 Memory utilization:

@@ -48,7 +48,7 @@ services:
 
       # Metric names
       - METRIC_CPU_UTIL=${METRIC_CPU_UTIL:-agx_orin_cpu_util_percent}
-      - METRIC_CPU_FREQ=${METRIC_CPU_FREQ:-agx_orin_cpu_freq_khz}
+      - METRIC_CPU_FREQ=${METRIC_CPU_FREQ:-agx_orin_cpu_freq_mhz}
       - METRIC_MEMORY_UTIL=${METRIC_MEMORY_UTIL:-agx_orin_memory_util_percent}
       - METRIC_GPU_UTIL=${METRIC_GPU_UTIL:-agx_orin_gpu_util_percent}
       - METRIC_THERMAL=${METRIC_THERMAL:-agx_orin_thermal_celsius}

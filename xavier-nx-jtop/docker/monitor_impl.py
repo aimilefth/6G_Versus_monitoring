@@ -515,7 +515,7 @@ class DirectJetson:
 SERVICE_LABEL = os.getenv("SERVICE_LABEL", "xavier-nx-jtop")
 
 METRIC_CPU_UTIL = os.getenv("METRIC_CPU_UTIL", "xavier_nx_cpu_util_percent")
-METRIC_CPU_FREQ = os.getenv("METRIC_CPU_FREQ", "xavier_nx_cpu_freq_khz")
+METRIC_CPU_FREQ = os.getenv("METRIC_CPU_FREQ", "xavier_nx_cpu_freq_mhz")
 METRIC_MEMORY_UTIL = os.getenv("METRIC_MEMORY_UTIL", "xavier_nx_memory_util_percent")
 METRIC_GPU_UTIL = os.getenv("METRIC_GPU_UTIL", "xavier_nx_gpu_util_percent")
 METRIC_THERMAL = os.getenv("METRIC_THERMAL", "xavier_nx_thermal_celsius")
@@ -607,7 +607,7 @@ def collect_cpu_freq(jetson) -> dict[str, float]:
 
         cur = _safe_float((cpu.get("freq") or {}).get("cur"))
         if cur is not None:
-            # cpufreq is kHz; metric is usually MHz.
+            # cpufreq is mhz
             out[f"cpu{idx}"] = cur / 1000.0
 
     return out
