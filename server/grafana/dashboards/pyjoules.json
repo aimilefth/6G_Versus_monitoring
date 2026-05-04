@@ -215,7 +215,7 @@
         {
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "agx_orin_cpu_freq_khz",
+          "expr": "agx_orin_cpu_freq_mhz",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "interval": "20ms",
@@ -1007,7 +1007,7 @@
         {
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "xavier_nx_cpu_freq_khz",
+          "expr": "xavier_nx_cpu_freq_mhz",
           "format": "time_series",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
@@ -1018,7 +1018,7 @@
           "useBackend": false
         }
       ],
-      "title": "CPU Frequency",
+      "title": "CPU Frequency (MHz)",
       "type": "timeseries"
     },
     {
