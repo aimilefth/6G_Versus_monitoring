@@ -10,19 +10,7 @@ services:
 
     networks:
       - monitoring
-
-    # jtop in Docker talks to the host jtop.service through this socket.
-    volumes:
-      - /run/jtop.sock:/run/jtop.sock
-
-    # Usually root in the container can use the socket.
-    # If your host socket is group-restricted, set JTOP_GID in .env.
-    group_add:
-      - "${JTOP_GID:-0}"
-
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
+    privileged: true
     environment:
       - REMOTE_WRITE_URL=http://${CLIENT_XAVIER_NX_JTOP_PROMETHEUS_HOST:-host.docker.internal}:${CLIENT_XAVIER_NX_JTOP_PROMETHEUS_PORT:-9090}/api/v1/write
       - SCRAPE_INTERVAL_S=${CLIENT_XAVIER_NX_JTOP_SCRAPE_INTERVAL_S:-0.5}
