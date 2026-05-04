@@ -10,7 +10,7 @@ import os
 import re
 from pathlib import Path
 
-log = logging.getLogger("xavier-nx-jtop")
+log = logging.getLogger("agx-orin-jtop")
 
 
 # ─────────────────────────────
@@ -85,7 +85,7 @@ def get_value_from_read(path):
 
 class Ina3221PowerScraper:
     """
-    INA3221 scraper imported from xavier-nx.
+    INA3221 scraper imported from agx-orin.
 
     Important merge rule:
     - this scraper returns only measured values
@@ -512,17 +512,17 @@ class DirectJetson:
 # Metric configuration
 # ─────────────────────────────
 
-SERVICE_LABEL = os.getenv("SERVICE_LABEL", "xavier-nx-jtop")
+SERVICE_LABEL = os.getenv("SERVICE_LABEL", "agx-orin-jtop")
 
-METRIC_CPU_UTIL = os.getenv("METRIC_CPU_UTIL", "xavier_nx_cpu_util_percent")
-METRIC_CPU_FREQ = os.getenv("METRIC_CPU_FREQ", "xavier_nx_cpu_freq_khz")
-METRIC_MEMORY_UTIL = os.getenv("METRIC_MEMORY_UTIL", "xavier_nx_memory_util_percent")
-METRIC_GPU_UTIL = os.getenv("METRIC_GPU_UTIL", "xavier_nx_gpu_util_percent")
-METRIC_THERMAL = os.getenv("METRIC_THERMAL", "xavier_nx_thermal_celsius")
-METRIC_MEMORY_DETAILS = os.getenv("METRIC_MEMORY_DETAILS","xavier_nx_memory_details_mb")
-METRIC_POWER_W = os.getenv("METRIC_POWER_W", "xavier_nx_power_watts")
-METRIC_VOLTAGE_V = os.getenv("METRIC_VOLTAGE_V", "xavier_nx_voltage_volts")
-METRIC_CURRENT_A = os.getenv("METRIC_CURRENT_A", "xavier_nx_current_amps")
+METRIC_CPU_UTIL = os.getenv("METRIC_CPU_UTIL", "agx_orin_cpu_util_percent")
+METRIC_CPU_FREQ = os.getenv("METRIC_CPU_FREQ", "agx_orin_cpu_freq_khz")
+METRIC_MEMORY_UTIL = os.getenv("METRIC_MEMORY_UTIL", "agx_orin_memory_util_percent")
+METRIC_GPU_UTIL = os.getenv("METRIC_GPU_UTIL", "agx_orin_gpu_util_percent")
+METRIC_THERMAL = os.getenv("METRIC_THERMAL", "agx_orin_thermal_celsius")
+METRIC_MEMORY_DETAILS = os.getenv("METRIC_MEMORY_DETAILS","agx_orin_memory_details_mb")
+METRIC_POWER_W = os.getenv("METRIC_POWER_W", "agx_orin_power_watts")
+METRIC_VOLTAGE_V = os.getenv("METRIC_VOLTAGE_V", "agx_orin_voltage_volts")
+METRIC_CURRENT_A = os.getenv("METRIC_CURRENT_A", "agx_orin_current_amps")
 
 SKIP_OFFLINE_THERMAL = _env_bool("SKIP_OFFLINE_THERMAL", True)
 JTOP_RECONNECT_DELAY_S = _env_float("JTOP_RECONNECT_DELAY_S", 3.0)
@@ -790,7 +790,7 @@ class power_scraper:
     """
     jtop-backed scraper.
 
-    This keeps the same shape/style as your existing xavier-nx monitor:
+    This keeps the same shape/style as your existing agx-orin monitor:
       get_power() returns a raw dictionary
       process_data() normalizes to Prometheus remote-write records
     """
@@ -863,7 +863,7 @@ def process_data(input_queue: queue.Queue, output_queue: queue.Queue, stop_event
     """
     Convert raw jtop dictionaries to normalized Prometheus remote-write records.
     """
-    log.info("xavier-nx-jtop process_data thread started (normalizing)")
+    log.info("agx-orin-jtop process_data thread started (normalizing)")
 
     metric_by_section = {
         "cpu_util": METRIC_CPU_UTIL,
