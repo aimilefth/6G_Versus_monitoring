@@ -229,20 +229,32 @@ class DirectJetson:
             return {}
 
         free = mem.get("MemFree", 0.0)
+        available = mem.get("MemAvailable", 0.0)
         buffers = mem.get("Buffers", 0.0)
         cached = mem.get("Cached", 0.0) + mem.get("SReclaimable", 0.0)
 
-        # Same spirit as jtop/tegrastats: used RAM excluding buffers/cache.
+        # Used excluding buffers/cache.
         used = max(0.0, total - free - buffers - cached)
+
+        swap_total = mem.get("SwapTotal", 0.0)
+        swap_free = mem.get("SwapFree", 0.0)
+        swap_used = max(0.0, swap_total - swap_free)
 
         return {
             "RAM": {
                 "tot": total,
                 "used": used,
                 "free": free,
+                "available": available,
                 "buffers": buffers,
                 "cached": cached,
-            }
+            },
+            "SWAP": {
+                "tot": swap_total,
+                "used": swap_used,
+                "free": swap_free,
+            },
+            "MEMINFO": mem,
         }
 
     def _resolve_sys_path(self, path: Path) -> Path:
@@ -411,6 +423,7 @@ METRIC_CPU_FREQ = os.getenv("METRIC_CPU_FREQ", "xavier_nx_cpu_freq_khz")
 METRIC_MEMORY_UTIL = os.getenv("METRIC_MEMORY_UTIL", "xavier_nx_memory_util_percent")
 METRIC_GPU_UTIL = os.getenv("METRIC_GPU_UTIL", "xavier_nx_gpu_util_percent")
 METRIC_THERMAL = os.getenv("METRIC_THERMAL", "xavier_nx_thermal_celsius")
+METRIC_MEMORY_DETAILS = os.getenv("METRIC_MEMORY_DETAILS","xavier_nx_memory_details_mb")
 
 SKIP_OFFLINE_THERMAL = _env_bool("SKIP_OFFLINE_THERMAL", True)
 JTOP_RECONNECT_DELAY_S = _env_float("JTOP_RECONNECT_DELAY_S", 3.0)
@@ -513,6 +526,51 @@ def collect_memory_util(jetson) -> dict[str, float]:
 
     return out
 
+def collect_memory_details(jetson) -> dict[str, float]:
+    """
+    Export detailed memory values in MiB.
+
+    /proc/meminfo exposes KiB.
+    KiB / 1024 = MiB.
+    """
+    out: dict[str, float] = {}
+
+    memory = getattr(jetson, "memory", {}) or {}
+
+    ram = memory.get("RAM", {})
+    swap = memory.get("SWAP", {})
+    raw = memory.get("MEMINFO", {})
+
+    def put(name: str, value) -> None:
+        value = _safe_float(value)
+        if value is not None:
+            out[name] = value / 1024.0
+
+    # RAM summary
+    put("ram_total", ram.get("tot"))
+    put("ram_used", ram.get("used"))
+    put("ram_free", ram.get("free"))
+    put("ram_available", ram.get("available"))
+    put("ram_buffers", ram.get("buffers"))
+    put("ram_cached", ram.get("cached"))
+
+    # Swap summary
+    put("swap_total", swap.get("tot"))
+    put("swap_used", swap.get("used"))
+    put("swap_free", swap.get("free"))
+    put("swap_cached", raw.get("SwapCached"))
+
+    # Useful kernel buckets
+    put("shared", raw.get("Shmem"))
+    put("slab", raw.get("Slab"))
+    put("slab_reclaimable", raw.get("SReclaimable"))
+    put("slab_unreclaimable", raw.get("SUnreclaim"))
+    put("page_tables", raw.get("PageTables"))
+    put("kernel_stack", raw.get("KernelStack"))
+    put("vmalloc_used", raw.get("VmallocUsed"))
+
+    return out
+
 
 def collect_gpu_util(jetson) -> dict[str, float]:
     out: dict[str, float] = {}
@@ -572,6 +630,12 @@ COLLECTORS: list[CollectorSpec] = [
         enabled_env="ENABLE_THERMAL",
         interval_env="THERMAL_INTERVAL_S",
         collect_fn=collect_thermal,
+    ),
+    CollectorSpec(
+        name="memory_details",
+        enabled_env="ENABLE_MEMORY_DETAILS",
+        interval_env="MEMORY_DETAILS_INTERVAL_S",
+        collect_fn=collect_memory_details,
     ),
 ]
 
@@ -659,6 +723,7 @@ def process_data(input_queue: queue.Queue, output_queue: queue.Queue, stop_event
         "memory_util": METRIC_MEMORY_UTIL,
         "gpu_util": METRIC_GPU_UTIL,
         "thermal": METRIC_THERMAL,
+        "memory_details": METRIC_MEMORY_DETAILS,
     }
 
     while not stop_event.is_set():
