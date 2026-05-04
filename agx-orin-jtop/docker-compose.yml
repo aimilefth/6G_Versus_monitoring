@@ -1,0 +1,72 @@
+version: '3.3'
+
+networks:
+  monitoring:
+    driver: bridge
+
+services:
+  xavier-nx-jtop:
+    image: ${CLIENT_AGX_ORIN_JTOP_IMAGE:-aimilefth/6gversus-monitoring:xavier-nx-jtop}
+
+    networks:
+      - monitoring
+    privileged: true
+
+    volumes:
+      - /sys/bus/i2c/drivers/ina3221:/sys/bus/i2c/drivers/ina3221:ro
+      - /sys/class/hwmon:/sys/class/hwmon:ro
+
+    environment:
+      - REMOTE_WRITE_URL=http://${CLIENT_AGX_ORIN_JTOP_PROMETHEUS_HOST:-host.docker.internal}:${CLIENT_AGX_ORIN_JTOP_PROMETHEUS_PORT:-9090}/api/v1/write
+      - SCRAPE_INTERVAL_S=${CLIENT_AGX_ORIN_JTOP_SCRAPE_INTERVAL_S:-0.5}
+      - PUSH_INTERVAL_S=${CLIENT_AGX_ORIN_JTOP_PUSH_INTERVAL_S:-4}
+      - MAX_RETRY_BATCHES=${CLIENT_AGX_ORIN_JTOP_MAX_RETRY_BATCHES:-5}
+      - LOG_LEVEL=${CLIENT_AGX_ORIN_JTOP_LOG_LEVEL:-INFO}
+      - SERVICE_LABEL=${CLIENT_AGX_ORIN_JTOP_SERVICE_LABEL:-xavier-nx-jtop}
+
+      # Collector toggles
+      - ENABLE_CPU_UTIL=${ENABLE_CPU_UTIL:-true}
+      - ENABLE_CPU_FREQ=${ENABLE_CPU_FREQ:-true}
+      - ENABLE_MEMORY_UTIL=${ENABLE_MEMORY_UTIL:-true}
+      - ENABLE_GPU_UTIL=${ENABLE_GPU_UTIL:-true}
+      - ENABLE_THERMAL=${ENABLE_THERMAL:-true}
+      - ENABLE_MEMORY_DETAILS=${ENABLE_MEMORY_DETAILS:-true}
+      - ENABLE_POWER=${ENABLE_POWER:-true}
+      - ENABLE_VOLTAGE=${ENABLE_VOLTAGE:-true}
+      - ENABLE_CURRENT=${ENABLE_CURRENT:-true}
+
+      # Optional per-collector intervals
+      - CPU_UTIL_INTERVAL_S=${CPU_UTIL_INTERVAL_S:-0}
+      - CPU_FREQ_INTERVAL_S=${CPU_FREQ_INTERVAL_S:-0}
+      - MEMORY_UTIL_INTERVAL_S=${MEMORY_UTIL_INTERVAL_S:-0}
+      - GPU_UTIL_INTERVAL_S=${GPU_UTIL_INTERVAL_S:-0}
+      - THERMAL_INTERVAL_S=${THERMAL_INTERVAL_S:-0}
+      - MEMORY_DETAILS_INTERVAL_S=${MEMORY_DETAILS_INTERVAL_S:-0}
+      - POWER_INTERVAL_S=${POWER_INTERVAL_S:-0}
+      - VOLTAGE_INTERVAL_S=${VOLTAGE_INTERVAL_S:-0}
+      - CURRENT_INTERVAL_S=${CURRENT_INTERVAL_S:-0}
+
+      # Metric names
+      - METRIC_CPU_UTIL=${METRIC_CPU_UTIL:-xavier_nx_cpu_util_percent}
+      - METRIC_CPU_FREQ=${METRIC_CPU_FREQ:-xavier_nx_cpu_freq_khz}
+      - METRIC_MEMORY_UTIL=${METRIC_MEMORY_UTIL:-xavier_nx_memory_util_percent}
+      - METRIC_GPU_UTIL=${METRIC_GPU_UTIL:-xavier_nx_gpu_util_percent}
+      - METRIC_THERMAL=${METRIC_THERMAL:-xavier_nx_thermal_celsius}
+      - METRIC_MEMORY_DETAILS=${METRIC_MEMORY_DETAILS:-xavier_nx_memory_details_mb}
+      - METRIC_POWER_W=${METRIC_POWER_W:-xavier_nx_power_watts}
+      - METRIC_VOLTAGE_V=${METRIC_VOLTAGE_V:-xavier_nx_voltage_volts}
+      - METRIC_CURRENT_A=${METRIC_CURRENT_A:-xavier_nx_current_amps}
+
+      - SKIP_OFFLINE_THERMAL=${SKIP_OFFLINE_THERMAL:-true}
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >
+          python -c "import urllib.request,sys;
+          urllib.request.urlopen('http://${CLIENT_AGX_ORIN_JTOP_PROMETHEUS_HOST:-host.docker.internal}:${CLIENT_AGX_ORIN_JTOP_PROMETHEUS_PORT:-9090}/-/healthy', timeout=3);
+          sys.exit(0)"
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
