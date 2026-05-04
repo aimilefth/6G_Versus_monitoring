@@ -1,92 +1,147 @@
-# xavier-nx (Jetson Xavier NX client stack)
+# xavier-nx-jtop
 
-This client stack runs on **NVIDIA Jetson Xavier NX** (ARM64) and pushes power metrics to Prometheus via **Remote Write** using the shared `base-monitoring-client` runtime.
+This client stack runs on NVIDIA Jetson Xavier NX and pushes jtop / jetson-stats
+metrics to Prometheus via Remote Write using the shared `base-monitoring-client`
+runtime.
 
-It reads rail telemetry from the INA3221 sysfs entries documented by NVIDIA and emits normalized Prometheus records.
+Unlike the `xavier-nx` INA3221 power client, this one reads host telemetry
+through the `jetson-stats` Python API.
 
-## What it emits
+## Important Docker requirement
 
-This client produces three metrics by default:
+`jtop` in Docker needs the host `jtop.service`.
 
-- `xavier_nx_power_watts{component="VDD_IN",source="xavier-nx"}`
-- `xavier_nx_voltage_volts{component="VDD_IN",source="xavier-nx"}`
-- `xavier_nx_current_amps{component="VDD_IN",source="xavier-nx"}`
+On the Xavier NX host:
 
-Metric names can be overridden via env:
-- `METRIC_POWER_W`, `METRIC_VOLTAGE_V`, `METRIC_CURRENT_A`
+```bash
+sudo pip3 install -U jetson-stats
+sudo systemctl restart jtop.service
+sudo systemctl status jtop.service
+````
 
-The metrics are described on the [NVIDIA Jetson Linux Developer](https://docs.nvidia.com/jetson/archives/r35.4.1/DeveloperGuide/text/SD/PlatformPowerAndPerformance/JetsonXavierNxSeriesAndJetsonAgxXavierSeries.html#jetson-xavier-nx-series)
+The container also installs `jetson-stats`, and `docker-compose.yml` mounts:
 
-## Files
-
+```yaml
+volumes:
+  - /run/jtop.sock:/run/jtop.sock
 ```
 
-xavier-nx/
-├── docker-compose.yml
-├── README.md
-└── docker/
-├── Dockerfile
-├── docker_build.sh
-└── monitor_impl.py
-
-````
-
-## Configuration
-
-You can pass variables either by exporting them in your shell or by creating an optional `.env` file next to `docker-compose.yml`.
-
-Main variables:
-
-- `CLIENT_XAVIER_NX_PROMETHEUS_HOST` (default: `host.docker.internal`)
-- `CLIENT_XAVIER_NX_PROMETHEUS_PORT` (default: `9090`)
-- `CLIENT_XAVIER_NX_SCRAPE_INTERVAL_S` (default: `0.2`)
-- `CLIENT_XAVIER_NX_PUSH_INTERVAL_S` (default: `4`)
-- `CLIENT_XAVIER_NX_MAX_RETRY_BATCHES` (default: `5`)
-- `CLIENT_XAVIER_NX_LOG_LEVEL` (default: `INFO`)
-- `CLIENT_XAVIER_NX_SERVICE_LABEL` (default: `xavier-nx`)
-
-
-## Build the image
-
-On your build machine (or directly on the Orin):
+If the socket is group-restricted, set:
 
 ```bash
-cd xavier-nx/docker
+export JTOP_GID="$(getent group jtop | awk -F: '{print $3}')"
+```
+
+or put the numeric value in `.env`.
+
+## Metrics emitted
+
+Defaults:
+
+```text
+xavier_nx_cpu_util_percent{component="cpu0",source="xavier-nx-jtop-01"}
+xavier_nx_cpu_freq_khz{component="cpu0",source="xavier-nx-jtop-01"}
+xavier_nx_memory_util_percent{component="RAM",source="xavier-nx-jtop-01"}
+xavier_nx_gpu_util_percent{component="gpu",source="xavier-nx-jtop-01"}
+xavier_nx_thermal_celsius{component="CPU",source="xavier-nx-jtop-01"}
+```
+
+Metric names can be overridden with:
+
+```dotenv
+METRIC_CPU_UTIL=...
+METRIC_CPU_FREQ=...
+METRIC_MEMORY_UTIL=...
+METRIC_GPU_UTIL=...
+METRIC_THERMAL=...
+```
+
+## Enable / disable collectors
+
+In `.env`:
+
+```dotenv
+ENABLE_CPU_UTIL=true
+ENABLE_CPU_FREQ=true
+ENABLE_MEMORY_UTIL=true
+ENABLE_GPU_UTIL=true
+ENABLE_THERMAL=true
+```
+
+You can also make expensive collectors run less often:
+
+```dotenv
+THERMAL_INTERVAL_S=2
+GPU_UTIL_INTERVAL_S=1
+```
+
+A value of `0` means "run every jtop sample".
+
+## Build
+
+```bash
+cd xavier-nx-jtop/docker
 ./docker_build.sh
-````
-
-This builds and pushes an **ARM64** image by default:
-
-* `aimilefth/6gversus-monitoring:xavier-nx`
-
-You can override the image name:
-
-```bash
-IMAGE_NAME=myrepo/xavier-nx ./docker_build.sh
 ```
 
 ## Run
 
-From the repo root, you can run with your helper (it just `cd`s into the directory):
+From repo root:
 
 ```bash
-./docker-compose-helper.sh -s xavier-nx up -d
+./docker-compose-helper.sh -s xavier-nx-jtop up -d
 ```
 
-Or run directly:
+Logs:
 
 ```bash
-cd xavier-nx
-docker compose up -d
+./docker-compose-helper.sh -s xavier-nx-jtop logs -f
 ```
 
-## Notes & troubleshooting
+## Example PromQL
 
-### 1) Sysfs path differences
+CPU utilization per core:
 
-The implementation reads:
+```promql
+xavier_nx_cpu_util_percent{source="xavier-nx-jtop-01"}
+```
 
-* `/sys/bus/i2c/drivers/ina3221/1-0040/hwmon/hwmon*/in*_input`
-* `/sys/bus/i2c/drivers/ina3221/1-0040/hwmon/hwmon*/curr*_input`
+CPU frequency per core:
 
-If your Jetson exposes a different path (driver name, bus number, or device address), adjust `docker/monitor_impl.py` accordingly.
+```promql
+xavier_nx_cpu_freq_khz{source="xavier-nx-jtop-01"}
+```
+
+Memory utilization:
+
+```promql
+xavier_nx_memory_util_percent{source="xavier-nx-jtop-01"}
+```
+
+GPU utilization:
+
+```promql
+xavier_nx_gpu_util_percent{source="xavier-nx-jtop-01"}
+```
+
+Thermals:
+
+```promql
+xavier_nx_thermal_celsius{source="xavier-nx-jtop-01"}
+```
+
+````
+
+---
+
+Run it with:
+
+```bash
+./docker-compose-helper.sh -s xavier-nx-jtop up -d
+````
+
+And verify in Prometheus with:
+
+```promql
+{source="xavier-nx-jtop-01"}
+```

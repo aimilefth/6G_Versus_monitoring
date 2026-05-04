@@ -5,45 +5,64 @@ networks:
     driver: bridge
 
 services:
-  xavier-nx:
-    image: ${CLIENT_XAVIER_NX_IMAGE:-aimilefth/6gversus-monitoring:xavier-nx}
-    # Jetson Orin NX is ARM64:
-    # pull_policy: always
-    # container_name: xavier-nx
+  xavier-nx-jtop:
+    image: ${CLIENT_XAVIER_NX_JTOP_IMAGE:-aimilefth/6gversus-monitoring:xavier-nx-jtop}
+
     networks:
       - monitoring
-    # privileged: ${XAVIER_NX_PRIVILEGED:-false}
-    # sysfs access (read-only). These paths are used by the INA3221 driver.
+
+    # jtop in Docker talks to the host jtop.service through this socket.
     volumes:
-      - /sys/bus/i2c/drivers/ina3221:/sys/bus/i2c/drivers/ina3221:ro
-      - /sys/class/hwmon:/sys/class/hwmon:ro
+      - /run/jtop.sock:/run/jtop.sock
 
-    # # Docker masks some system paths; this can make sysfs files appear "missing".
-    # security_opt:
-    #   - systempaths=unconfined
+    # Usually root in the container can use the socket.
+    # If your host socket is group-restricted, set JTOP_GID in .env.
+    group_add:
+      - "${JTOP_GID:-0}"
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
     environment:
-      - REMOTE_WRITE_URL=http://${CLIENT_XAVIER_NX_PROMETHEUS_HOST:-host.docker.internal}:${CLIENT_XAVIER_NX_PROMETHEUS_PORT:-9090}/api/v1/write
-      - SCRAPE_INTERVAL_S=${CLIENT_XAVIER_NX_SCRAPE_INTERVAL_S:-0.2}
-      - PUSH_INTERVAL_S=${CLIENT_XAVIER_NX_PUSH_INTERVAL_S:-4}
-      - MAX_RETRY_BATCHES=${CLIENT_XAVIER_NX_MAX_RETRY_BATCHES:-5}
-      - LOG_LEVEL=${CLIENT_XAVIER_NX_LOG_LEVEL:-INFO}
-      - SERVICE_LABEL=${CLIENT_XAVIER_NX_SERVICE_LABEL:-xavier-nx}
+      - REMOTE_WRITE_URL=http://${CLIENT_XAVIER_NX_JTOP_PROMETHEUS_HOST:-host.docker.internal}:${CLIENT_XAVIER_NX_JTOP_PROMETHEUS_PORT:-9090}/api/v1/write
+      - SCRAPE_INTERVAL_S=${CLIENT_XAVIER_NX_JTOP_SCRAPE_INTERVAL_S:-0.5}
+      - PUSH_INTERVAL_S=${CLIENT_XAVIER_NX_JTOP_PUSH_INTERVAL_S:-4}
+      - MAX_RETRY_BATCHES=${CLIENT_XAVIER_NX_JTOP_MAX_RETRY_BATCHES:-5}
+      - LOG_LEVEL=${CLIENT_XAVIER_NX_JTOP_LOG_LEVEL:-INFO}
+      - SERVICE_LABEL=${CLIENT_XAVIER_NX_JTOP_SERVICE_LABEL:-xavier-nx-jtop}
 
-      # metric names (optional overrides)
-      # - METRIC_POWER_W=xavier_nx_power_watts
-      # - METRIC_VOLTAGE_V=xavier_nx_voltage_volts
-      # - METRIC_CURRENT_A=xavier_nx_current_amps
+      # Collector toggles
+      - ENABLE_CPU_UTIL=${ENABLE_CPU_UTIL:-true}
+      - ENABLE_CPU_FREQ=${ENABLE_CPU_FREQ:-true}
+      - ENABLE_MEMORY_UTIL=${ENABLE_MEMORY_UTIL:-true}
+      - ENABLE_GPU_UTIL=${ENABLE_GPU_UTIL:-true}
+      - ENABLE_THERMAL=${ENABLE_THERMAL:-true}
+
+      # Optional per-collector intervals
+      - CPU_UTIL_INTERVAL_S=${CPU_UTIL_INTERVAL_S:-0}
+      - CPU_FREQ_INTERVAL_S=${CPU_FREQ_INTERVAL_S:-0}
+      - MEMORY_UTIL_INTERVAL_S=${MEMORY_UTIL_INTERVAL_S:-0}
+      - GPU_UTIL_INTERVAL_S=${GPU_UTIL_INTERVAL_S:-0}
+      - THERMAL_INTERVAL_S=${THERMAL_INTERVAL_S:-0}
+
+      # Metric names
+      - METRIC_CPU_UTIL=${METRIC_CPU_UTIL:-xavier_nx_cpu_util_percent}
+      - METRIC_CPU_FREQ=${METRIC_CPU_FREQ:-xavier_nx_cpu_freq_khz}
+      - METRIC_MEMORY_UTIL=${METRIC_MEMORY_UTIL:-xavier_nx_memory_util_percent}
+      - METRIC_GPU_UTIL=${METRIC_GPU_UTIL:-xavier_nx_gpu_util_percent}
+      - METRIC_THERMAL=${METRIC_THERMAL:-xavier_nx_thermal_celsius}
+
+      - SKIP_OFFLINE_THERMAL=${SKIP_OFFLINE_THERMAL:-true}
+      - JTOP_RECONNECT_DELAY_S=${JTOP_RECONNECT_DELAY_S:-3}
 
     healthcheck:
       test:
         - CMD-SHELL
         - >
           python -c "import urllib.request,sys;
-          urllib.request.urlopen('http://${CLIENT_XAVIER_NX_PROMETHEUS_HOST:-host.docker.internal}:${CLIENT_XAVIER_NX_PROMETHEUS_PORT:-9090}/-/healthy', timeout=3);
+          urllib.request.urlopen('http://${CLIENT_XAVIER_NX_JTOP_PROMETHEUS_HOST:-host.docker.internal}:${CLIENT_XAVIER_NX_JTOP_PROMETHEUS_PORT:-9090}/-/healthy', timeout=3);
           sys.exit(0)"
       interval: 15s
       timeout: 5s
       retries: 3
-      # start_period: 10s
-
     restart: unless-stopped
