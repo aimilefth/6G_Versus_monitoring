@@ -85,45 +85,65 @@ def get_value_from_read(path):
 
 class Ina3221PowerScraper:
     """
-    INA3221 scraper imported from agx-orin.
+    INA3221 scraper using the known-correct AGX Orin rail mapping.
 
     Important merge rule:
     - this scraper returns only measured values
     - it does NOT create a timestamp
     - the shared scrape-loop timestamp is added by get_power()
+
+    Returned shape is compatible with the existing template collectors:
+      {
+        "VDD_GPU_SOC": {"Voltage": ..., "Current": ..., "Power": ...},
+        ...
+        "total": {"Power": ...}
+      }
+
+    Because "total" only has Power, it will only be emitted by collect_ina_power().
     """
 
     def __init__(self) -> None:
-        self.name = ['VDD_IN', 'VDD_CPU_GPU_CV', 'VDD_SOC']
+        self.name = [
+            "VDD_GPU_SOC",
+            "VDD_CPU_CV",
+            "VIN_SYS_5V0",
+            "VDDQ_VDD2_1V8AO",
+        ]
 
-        self.address = [0, 0, 0]
-
-        self.channel = [1, 2, 3]
+        self.address = [0, 0, 0, 1]
+        self.channel = [1, 2, 3, 2]
 
         self.description = [
-            'Total Module Power.',
-            'Total power consumed by CPU, CPU and CV cores i.e. DLA and PVA',
-            'Power consumed by SOC core which supplies to memory subsystem and various engines like nvdec, nvenc, vi, vic, isp etc.',
+            "Total power consumed by GPU and SOC core which supplies to memory subsystem and various engines like nvdec, nvenc, vi, vic, isp etc.",
+            "Total power consumed by CPU and CV cores i.e. DLA and PVA.",
+            "Power consumed by system 5V rail which supplies to various IOs e.g. HDMI, USB, UPHY, UFS, SDMMC, EMMC, DDR etc. VDDQ_VDD2_1V8AO power is also included in VIN_SYS_5V0 power.",
+            "Power consumed by DDR core, DDR IO and 1V8AO Always ON power rail.",
         ]
 
     def get_power(self):
         power = {}
+        total_power = 0.0
 
-        for (address, channel, name) in zip(self.address, self.channel, self.name):
-            # Values from files are milli
-            v_raw = get_value_from_read(
-                HOST_SYS / f'bus/i2c/drivers/ina3221/7-004{address}/hwmon/hwmon{address + 5}/in{channel}_input'
+        for address, channel, name in zip(self.address, self.channel, self.name):
+            # Values from files are milli.
+            #
+            # Known-correct AGX Orin path shape:
+            # /sys/bus/i2c/drivers/ina3221/1-0040/hwmon/hwmon1/...
+            # /sys/bus/i2c/drivers/ina3221/1-0041/hwmon/hwmon2/...
+            base = (
+                HOST_SYS
+                / f"bus/i2c/drivers/ina3221/1-004{address}/hwmon/hwmon{address + 1}"
             )
-            i_raw = get_value_from_read(
-                HOST_SYS / f'bus/i2c/drivers/ina3221/7-004{address}/hwmon/hwmon{address + 5}/curr{channel}_input'
-            )
+
+            v_raw = get_value_from_read(base / f"in{channel}_input")
+            i_raw = get_value_from_read(base / f"curr{channel}_input")
 
             if v_raw is None or i_raw is None:
                 continue
 
             try:
-                v = int(v_raw) / 1000
-                i = int(i_raw) / 1000
+                v = int(v_raw) / 1000.0
+                i = int(i_raw) / 1000.0
             except ValueError:
                 log.warning(
                     "INA3221 bad values component=%s voltage=%r current=%r",
@@ -135,13 +155,23 @@ class Ina3221PowerScraper:
 
             p = v * i
 
-            temp_dir = {
-                'Voltage': v,
-                'Current': i,
-                'Power': p,
+            power[name] = {
+                "Voltage": v,
+                "Current": i,
+                "Power": p,
             }
 
-            power[name] = temp_dir
+            if name != "VDDQ_VDD2_1V8AO":
+                # VDDQ_VDD2_1V8AO is already included in VIN_SYS_5V0.
+                total_power += p
+
+        # Compatible with the existing section-based collectors:
+        # collect_ina_power() will emit this as component="total".
+        # collect_ina_voltage/current() will ignore it because those fields do not exist.
+        if power:
+            power["total"] = {
+                "Power": total_power,
+            }
 
         return power
 
