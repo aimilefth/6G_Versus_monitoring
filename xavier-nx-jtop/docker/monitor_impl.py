@@ -373,57 +373,158 @@ class power_scraper:
 # ─────────────────────────────
 # API expected by base image
 # ─────────────────────────────
-
-def get_power(output_queue: queue.Queue, scrape_interval_s: float, stop_event):
+def _raise_jtop_background_error_if_any(jetson):
     """
-    Connect to host jtop.service through /run/jtop.sock, sample jtop data,
-    and push raw dictionaries to the first queue.
+    jtop normally exposes background-thread errors through jetson.ok().
 
-    jtop.ok() provides the natural update cadence for the jtop client.
+    Since this exporter intentionally does NOT call jetson.ok() in the
+    sampling loop, we check the private _error field directly so that
+    connection failures do not silently turn into stale metrics forever.
     """
-    scraper = power_scraper()
+
+    error = getattr(jetson, "_error", None)
+
+    if error:
+        ex_type, ex_value, tb = error
+        ex_value.__traceback__ = tb
+        raise ex_value
+
+    if not getattr(jetson, "_running", False):
+        raise RuntimeError("jtop background thread is not running")
+
+
+def get_power(output_queue, scrape_interval_s, stop_event):
+    """
+    Collect raw telemetry from jtop and push raw records into output_queue.
+
+    IMPORTANT:
+    This loop owns the sampling interval.
+
+    It does NOT wait on jetson.ok().
+    It does NOT use jtop's update interval as the exporter interval.
+
+    Timing behavior per batch:
+
+        batch_start = time.monotonic()
+        collect one full batch
+        push raw batch to queue
+        elapsed = time.monotonic() - batch_start
+
+        if elapsed < SCRAPE_INTERVAL_S:
+            sleep(SCRAPE_INTERVAL_S - elapsed)
+        else:
+            do not sleep
+            print warning
+    """
+
+    requested_interval_s = max(float(scrape_interval_s), 0.0)
+
+    raw_queue_put_timeout_s = _env_float(
+        "RAW_QUEUE_PUT_TIMEOUT_S",
+        default=0.2,
+    )
 
     log.info(
         "xavier-nx-jtop get_power thread started "
-        "(jtop interval=%s, service_label=%s)",
-        scrape_interval_s,
+        "(requested_sample_interval=%.6fs, service_label=%s). "
+        "Sampling cadence is controlled by this exporter loop, not by jetson.ok().",
+        requested_interval_s,
         SERVICE_LABEL,
     )
 
+    scraper = power_scraper()
+    batch_counter = 0
+
     while not stop_event.is_set():
         try:
-            with jtop(interval=float(scrape_interval_s)) as jetson:
-                log.info("Connected to jtop service")
+            # Do NOT pass scrape_interval_s here.
+            #
+            # jtop() still has its own internal service/cache refresh behavior,
+            # but this exporter does not wait for it and does not use it as the
+            # sampling interval.
+            with jtop() as jetson:
+                log.info(
+                    "Connected to jtop service. "
+                    "jtop reported service interval=%s, user interval=%s. "
+                    "Exporter sampling interval=%.6fs.",
+                    getattr(jetson, "interval", "unknown"),
+                    getattr(jetson, "interval_user", "unknown"),
+                    requested_interval_s,
+                )
 
                 while not stop_event.is_set():
-                    # This follows the jetson-stats usage pattern:
-                    # with jtop() as jetson:
-                    #     while jetson.ok():
-                    #         ...
-                    if not jetson.ok():
-                        time.sleep(0.05)
-                        continue
+                    batch_start_monotonic = time.monotonic()
+                    batch_counter += 1
+
+                    # Do not call jetson.ok() here.
+                    #
+                    # We only check whether the jtop background thread has
+                    # failed. This is non-blocking.
+                    _raise_jtop_background_error_if_any(jetson)
 
                     raw = scraper.get_power(jetson)
 
-                    # If all collectors are disabled or skipped by intervals,
-                    # raw may contain only timestamp. Do not enqueue empty samples.
-                    if len(raw) <= 1:
-                        continue
+                    sections = [
+                        key for key in raw.keys()
+                        if key != "timestamp"
+                    ]
 
-                    try:
-                        output_queue.put(raw, timeout=1)
-                    except queue.Full:
-                        log.warning("get_power: raw queue full; dropping measurement")
+                    if sections:
+                        log.debug(
+                            "jtop batch #%d sections=%s",
+                            batch_counter,
+                            sections,
+                        )
 
-        except Exception as e:
-            log.error(
-                "jtop connection/sampling failed: %s. "
-                "Check host jtop.service and /run/jtop.sock mount.",
-                e,
+                        try:
+                            output_queue.put(
+                                raw,
+                                timeout=raw_queue_put_timeout_s,
+                            )
+                        except queue.Full:
+                            log.warning(
+                                "Raw telemetry queue is full; "
+                                "dropping jtop batch #%d",
+                                batch_counter,
+                            )
+                    else:
+                        log.debug(
+                            "jtop batch #%d had no enabled sections",
+                            batch_counter,
+                        )
+
+                    batch_elapsed_s = time.monotonic() - batch_start_monotonic
+                    sleep_s = requested_interval_s - batch_elapsed_s
+
+                    if sleep_s > 0:
+                        log.debug(
+                            "jtop batch #%d took %.6fs; sleeping %.6fs "
+                            "to match requested interval %.6fs",
+                            batch_counter,
+                            batch_elapsed_s,
+                            sleep_s,
+                            requested_interval_s,
+                        )
+
+                        stop_event.wait(sleep_s)
+
+                    else:
+                        log.warning(
+                            "jtop batch #%d took %.6fs, which is slower than "
+                            "the requested interval %.6fs. "
+                            "Not sleeping before next batch.",
+                            batch_counter,
+                            batch_elapsed_s,
+                            requested_interval_s,
+                        )
+
+        except Exception as exc:
+            log.exception(
+                "jtop collection loop failed; reconnecting in %.1fs: %s",
+                JTOP_RECONNECT_DELAY_S,
+                exc,
             )
             stop_event.wait(JTOP_RECONNECT_DELAY_S)
-
 
 def process_data(input_queue: queue.Queue, output_queue: queue.Queue, stop_event):
     """
