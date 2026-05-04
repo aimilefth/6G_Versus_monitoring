@@ -529,10 +529,15 @@ def collect_thermal(jetson) -> dict[str, float]:
     out: dict[str, float] = {}
 
     for name, data in (getattr(jetson, "temperature", {}) or {}).items():
+        component = _sanitize_component(name)
+
+        if component.lower() == "pmic_die":
+            continue
+
         temp = data.get("temp") if isinstance(data, dict) else data
         temp = _safe_float(temp)
         if temp is not None:
-            out[_sanitize_component(name)] = temp
+            out[component] = temp
 
     return out
 
