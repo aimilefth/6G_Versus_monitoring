@@ -6,7 +6,9 @@ import queue
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from jtop import jtop
+import os
+import re
+from pathlib import Path
 
 log = logging.getLogger("xavier-nx-jtop")
 
@@ -69,6 +71,334 @@ def _sanitize_component(value: Any) -> str:
             .replace("-", "_")
     )
 
+HOST_PROC = Path(os.getenv("HOST_PROC", "/proc"))
+HOST_SYS = Path(os.getenv("HOST_SYS", "/sys"))
+
+CPU_LINE_RE = re.compile(r"^cpu(\d+)\s+(.*)$")
+KNOWN_GPU_NAMES = {"gv11b", "gp10b", "ga10b", "gb10b", "gpu"}
+
+
+def _read_text(path: Path) -> str | None:
+    try:
+        return path.read_text().strip()
+    except Exception:
+        return None
+
+
+def _read_int(path: Path) -> int | None:
+    txt = _read_text(path)
+    if txt is None:
+        return None
+    try:
+        return int(txt)
+    except ValueError:
+        return None
+
+
+def _read_float(path: Path) -> float | None:
+    txt = _read_text(path)
+    if txt is None:
+        return None
+    try:
+        return float(txt)
+    except ValueError:
+        return None
+
+
+def _parse_meminfo(proc_root: Path) -> dict[str, float]:
+    out: dict[str, float] = {}
+    try:
+        with (proc_root / "meminfo").open("r") as f:
+            for line in f:
+                key, rest = line.split(":", 1)
+                value = rest.strip().split()[0]
+                out[key] = float(value)  # KiB
+    except Exception:
+        return {}
+    return out
+
+
+def _parse_proc_stat(proc_root: Path) -> dict[int, list[float]]:
+    out: dict[int, list[float]] = {}
+    try:
+        with (proc_root / "stat").open("r") as f:
+            for line in f:
+                m = CPU_LINE_RE.match(line)
+                if not m:
+                    continue
+
+                cpu_id = int(m.group(1))
+
+                # Match jtop's behavior: first 7 proc/stat fields.
+                fields = [float(x) for x in m.group(2).split()[:7]]
+                fields.append(sum(fields))
+                out[cpu_id] = fields
+    except Exception:
+        return {}
+    return out
+
+
+class DirectJetson:
+    """
+    Small jtop-compatible read-only backend.
+
+    Exposes:
+      - .cpu
+      - .memory
+      - .gpu
+      - .temperature
+    """
+
+    def __init__(self, proc_root: Path = HOST_PROC, sys_root: Path = HOST_SYS):
+        self.proc_root = proc_root
+        self.sys_root = sys_root
+        self._last_cpu: dict[int, list[float]] = {}
+        self._gpu_devices = self._discover_gpus()
+
+        self.cpu: dict = {"cpu": []}
+        self.memory: dict = {}
+        self.gpu: dict = {}
+        self.temperature: dict = {}
+
+    def refresh(self) -> None:
+        self.cpu = self._read_cpu()
+        self.memory = self._read_memory()
+        self.gpu = self._read_gpu()
+        self.temperature = self._read_temperature()
+
+    def _read_cpu(self) -> dict:
+        samples = _parse_proc_stat(self.proc_root)
+        cpu_root = self.sys_root / "devices/system/cpu"
+
+        cpus: list[dict] = []
+        for cpu_id in sorted(samples):
+            cpu_dir = cpu_root / f"cpu{cpu_id}"
+            item: dict = {}
+
+            online_txt = _read_text(cpu_dir / "online")
+            item["online"] = online_txt != "0"
+
+            freq_dir = cpu_dir / "cpufreq"
+            if item["online"] and freq_dir.is_dir():
+                freq: dict = {}
+
+                cur = (
+                    _read_int(freq_dir / "scaling_cur_freq")
+                    or _read_int(freq_dir / "cpuinfo_cur_freq")
+                )
+                mn = (
+                    _read_int(freq_dir / "scaling_min_freq")
+                    or _read_int(freq_dir / "cpuinfo_min_freq")
+                )
+                mx = (
+                    _read_int(freq_dir / "scaling_max_freq")
+                    or _read_int(freq_dir / "cpuinfo_max_freq")
+                )
+
+                if cur is not None:
+                    freq["cur"] = cur
+                if mn is not None:
+                    freq["min"] = mn
+                if mx is not None:
+                    freq["max"] = mx
+
+                if freq:
+                    item["freq"] = freq
+
+            now = samples[cpu_id]
+            last = self._last_cpu.get(cpu_id)
+
+            if last is not None:
+                delta = [n - l for n, l in zip(now, last)]
+                total = delta[-1]
+                idle = 100.0 * delta[3] / total if total > 0 else 100.0
+                item["idle"] = max(0.0, min(100.0, idle))
+            else:
+                # First sample cannot estimate a delta yet.
+                item["idle"] = 100.0
+
+            self._last_cpu[cpu_id] = now
+            cpus.append(item)
+
+        return {"cpu": cpus}
+
+    def _read_memory(self) -> dict:
+        mem = _parse_meminfo(self.proc_root)
+        total = mem.get("MemTotal")
+        if not total:
+            return {}
+
+        free = mem.get("MemFree", 0.0)
+        buffers = mem.get("Buffers", 0.0)
+        cached = mem.get("Cached", 0.0) + mem.get("SReclaimable", 0.0)
+
+        # Same spirit as jtop/tegrastats: used RAM excluding buffers/cache.
+        used = max(0.0, total - free - buffers - cached)
+
+        return {
+            "RAM": {
+                "tot": total,
+                "used": used,
+                "free": free,
+                "buffers": buffers,
+                "cached": cached,
+            }
+        }
+
+    def _resolve_sys_path(self, path: Path) -> Path:
+        real = Path(os.path.realpath(path))
+        if self.sys_root != Path("/sys") and str(real).startswith("/sys/"):
+            return self.sys_root / real.relative_to("/sys")
+        return real
+
+    def _discover_gpus(self) -> dict[str, dict[str, Path]]:
+        """
+        Discover Jetson GPU sysfs paths.
+
+        Xavier NX commonly exposes:
+        /sys/devices/platform/17000000.gv11b/load
+
+        The devfreq directory may appear either below the GPU device or through
+        /sys/class/devfreq.
+        """
+        out: dict[str, dict[str, Path]] = {}
+
+        # First: explicit Xavier NX / AGX Xavier path.
+        for rel in (
+            "devices/platform/17000000.gv11b",
+            "devices/17000000.gv11b",
+        ):
+            dev_path = self.sys_root / rel
+            load_path = dev_path / "load"
+
+            if load_path.exists():
+                frq_path = dev_path / "devfreq" / "17000000.gv11b"
+
+                out["gv11b"] = {
+                    "path": dev_path,
+                    "load_path": load_path,
+                    "frq_path": frq_path,
+                }
+
+                log.info(
+                    "GPU discovered name=gv11b load_path=%s frq_path=%s",
+                    load_path,
+                    frq_path,
+                )
+                return out
+
+        # Second: generic devfreq fallback.
+        devfreq_root = self.sys_root / "class/devfreq"
+        if devfreq_root.is_dir():
+            for entry in devfreq_root.iterdir():
+                if not (entry.is_dir() or entry.is_symlink()):
+                    continue
+
+                entry_name = entry.name.lower()
+                of_node_name = (_read_text(entry / "device/of_node/name") or "").lower()
+
+                if (
+                    "gv11b" not in entry_name
+                    and "gp10b" not in entry_name
+                    and "gpu" not in entry_name
+                    and "gv11b" not in of_node_name
+                    and "gp10b" not in of_node_name
+                    and "gpu" not in of_node_name
+                ):
+                    continue
+
+                dev_path = self._resolve_sys_path(entry / "device")
+                load_path = dev_path / "load"
+
+                if not load_path.exists():
+                    log.debug(
+                        "GPU candidate skipped: entry=%s dev_path=%s load_path_missing=%s",
+                        entry,
+                        dev_path,
+                        load_path,
+                    )
+                    continue
+
+                name = of_node_name or entry.name
+
+                out[_sanitize_component(name)] = {
+                    "path": dev_path,
+                    "load_path": load_path,
+                    "frq_path": self._resolve_sys_path(entry),
+                }
+
+                log.info(
+                    "GPU discovered name=%s load_path=%s frq_path=%s",
+                    name,
+                    load_path,
+                    self._resolve_sys_path(entry),
+                )
+
+        if not out:
+            log.warning(
+                "No Jetson GPU sysfs node discovered. Tried explicit gv11b paths and %s",
+                devfreq_root,
+            )
+
+        return out
+
+
+    def _read_gpu(self) -> dict:
+        out: dict = {}
+
+        for name, paths in self._gpu_devices.items():
+            load_path = paths["load_path"]
+            frq_path = paths["frq_path"]
+
+            status: dict = {}
+            freq: dict = {}
+
+            raw_load = _read_float(load_path)
+            if raw_load is not None:
+                # Xavier NX gv11b load is tenths of a percent.
+                status["load"] = max(0.0, min(100.0, raw_load / 10.0))
+            else:
+                log.debug("GPU load unreadable: %s", load_path)
+
+            cur = _read_int(frq_path / "cur_freq")
+            mn = _read_int(frq_path / "min_freq")
+            mx = _read_int(frq_path / "max_freq")
+
+            if cur is not None:
+                freq["cur"] = cur // 1000
+            if mn is not None:
+                freq["min"] = mn // 1000
+            if mx is not None:
+                freq["max"] = mx // 1000
+
+            if status or freq:
+                out[name] = {
+                    "type": "integrated",
+                    "status": status,
+                    "freq": freq,
+                }
+
+        return out
+
+    def _read_temperature(self) -> dict:
+        out: dict = {}
+        thermal_root = self.sys_root / "class/thermal"
+
+        if not thermal_root.is_dir():
+            return out
+
+        for zone in thermal_root.glob("thermal_zone*"):
+            name = _read_text(zone / "type") or zone.name
+            raw = _read_float(zone / "temp")
+            if raw is None:
+                continue
+
+            # Linux thermal zones usually expose millidegrees Celsius.
+            temp_c = raw / 1000.0 if abs(raw) > 1000 else raw
+            out[name] = {"temp": temp_c}
+
+        return out
+
 
 # ─────────────────────────────
 # Metric configuration
@@ -95,7 +425,7 @@ class CollectorSpec:
     name: str
     enabled_env: str
     interval_env: str
-    collect_fn: Callable[[jtop], dict[str, float]]
+    collect_fn: Callable[[Any], dict[str, float]]
     last_run_monotonic: float = 0.0
 
     @property
@@ -112,7 +442,7 @@ class CollectorSpec:
             return True
         return (now - self.last_run_monotonic) >= interval
 
-    def collect_if_due(self, jetson: jtop, now: float) -> dict[str, float] | None:
+    def collect_if_due(self, jetson: Any, now: float) -> dict[str, float] | None:
         if not self.enabled:
             return None
         if not self.due(now):
@@ -140,101 +470,41 @@ class CollectorSpec:
 #   2. comment it out from COLLECTORS below.
 # ─────────────────────────────
 
-def collect_cpu_util(jetson: jtop) -> dict[str, float]:
-    """
-    Per-CPU utilization.
-
-    jtop CPU entries usually contain fields such as:
-      user, nice, system, idle
-
-    We export busy utilization as:
-      100 - idle
-
-    If idle is missing but a direct val/load field exists, we use that.
-    """
+def collect_cpu_util(jetson) -> dict[str, float]:
     out: dict[str, float] = {}
 
-    cpu_block = jetson.cpu
-    cpu_list = cpu_block.get("cpu", [])
-
-    for idx, cpu in enumerate(cpu_list):
-        if not isinstance(cpu, dict):
-            continue
-
-        if cpu.get("online") is False:
-            # Export offline CPUs as 0 utilization.
-            out[f"cpu{idx}"] = 0.0
+    cpu_block = getattr(jetson, "cpu", {}) or {}
+    for idx, cpu in enumerate(cpu_block.get("cpu", [])):
+        if not cpu.get("online", True):
             continue
 
         idle = _safe_float(cpu.get("idle"))
         if idle is not None:
             out[f"cpu{idx}"] = max(0.0, min(100.0, 100.0 - idle))
-            continue
-
-        # Fallbacks for possible jtop/tegrastats-shaped outputs.
-        for key in ("val", "load", "usage", "util"):
-            val = _safe_float(cpu.get(key))
-            if val is not None:
-                out[f"cpu{idx}"] = max(0.0, min(100.0, val))
-                break
 
     return out
 
 
-def collect_cpu_freq(jetson: jtop) -> dict[str, float]:
-    """
-    Per-CPU current frequency.
-
-    jtop CPU entries usually expose:
-      cpu["freq"]["cur"]
-
-    In jetson-stats this is typically kHz for CPU frequency.
-    """
+def collect_cpu_freq(jetson) -> dict[str, float]:
     out: dict[str, float] = {}
 
-    cpu_block = jetson.cpu
-    cpu_list = cpu_block.get("cpu", [])
-
-    for idx, cpu in enumerate(cpu_list):
-        if not isinstance(cpu, dict):
+    cpu_block = getattr(jetson, "cpu", {}) or {}
+    for idx, cpu in enumerate(cpu_block.get("cpu", [])):
+        if not cpu.get("online", True):
             continue
 
-        if cpu.get("online") is False:
-            out[f"cpu{idx}"] = 0.0
-            continue
-
-        freq = cpu.get("freq", {})
-        cur = None
-
-        if isinstance(freq, dict):
-            cur = _safe_float(freq.get("cur"))
-
-        # Fallbacks for alternate shapes.
-        if cur is None:
-            cur = _safe_float(cpu.get("frq"))
-        if cur is None:
-            cur = _safe_float(cpu.get("freq"))
-
+        cur = _safe_float((cpu.get("freq") or {}).get("cur"))
         if cur is not None:
-            out[f"cpu{idx}"] = cur
+            # cpufreq is kHz; metric is usually MHz.
+            out[f"cpu{idx}"] = cur / 1000.0
 
     return out
 
 
-def collect_memory_util(jetson: jtop) -> dict[str, float]:
-    """
-    Memory utilization as percent.
-
-    jtop.memory["RAM"] normally contains:
-      tot, used, free, buffers, cached, shared, ...
-
-    Values are usually in KiB. Since this metric is a ratio, the unit cancels out.
-    """
+def collect_memory_util(jetson) -> dict[str, float]:
     out: dict[str, float] = {}
 
-    mem = jetson.memory
-    ram = mem.get("RAM", {}) if hasattr(mem, "get") else {}
-
+    ram = (getattr(jetson, "memory", {}) or {}).get("RAM", {})
     used = _safe_float(ram.get("used"))
     total = _safe_float(ram.get("tot"))
 
@@ -243,65 +513,26 @@ def collect_memory_util(jetson: jtop) -> dict[str, float]:
 
     return out
 
-def collect_gpu_util(jetson: jtop) -> dict[str, float]:
-    """
-    GPU utilization as percent.
 
-    jtop.gpu is dict-like:
-      {
-        "gpu": {
-          "status": {"load": ...},
-          "freq": {...}
-        }
-      }
-    """
+def collect_gpu_util(jetson) -> dict[str, float]:
     out: dict[str, float] = {}
 
-    gpu_block = jetson.gpu
-
-    for gpu_name, gpu_payload in gpu_block.items():
-        if not isinstance(gpu_payload, dict):
-            continue
-
-        status = gpu_payload.get("status", {})
-        if not isinstance(status, dict):
-            continue
-
-        load = _safe_float(status.get("load"))
+    for name, data in (getattr(jetson, "gpu", {}) or {}).items():
+        load = _safe_float((data.get("status") or {}).get("load"))
         if load is not None:
-            out[_sanitize_component(gpu_name)] = max(0.0, min(100.0, load))
+            out[_sanitize_component(name)] = max(0.0, min(100.0, load))
 
     return out
 
 
-def collect_thermal(jetson: jtop) -> dict[str, float]:
-    """
-    Thermal sensors in Celsius.
-
-    jtop.temperature is usually:
-      {
-        "CPU": {"temp": 45.5, "online": true, ...},
-        "GPU": {"temp": 44.0, "online": true, ...}
-      }
-    """
+def collect_thermal(jetson) -> dict[str, float]:
     out: dict[str, float] = {}
 
-    thermal_block = jetson.temperature
-
-    for sensor_name, sensor_payload in thermal_block.items():
-        if not isinstance(sensor_payload, dict):
-            continue
-
-        temp = _safe_float(sensor_payload.get("temp"))
-        online = sensor_payload.get("online", True)
-
-        if temp is None:
-            continue
-
-        if SKIP_OFFLINE_THERMAL and (online is False or temp <= -255.0):
-            continue
-
-        out[_sanitize_component(sensor_name)] = temp
+    for name, data in (getattr(jetson, "temperature", {}) or {}).items():
+        temp = data.get("temp") if isinstance(data, dict) else data
+        temp = _safe_float(temp)
+        if temp is not None:
+            out[_sanitize_component(name)] = temp
 
     return out
 
@@ -349,7 +580,7 @@ class power_scraper:
       process_data() normalizes to Prometheus remote-write records
     """
 
-    def get_power(self, jetson: jtop) -> dict[str, Any]:
+    def get_power(self, jetson: Any) -> dict[str, Any]:
         now = time.monotonic()
 
         raw: dict[str, Any] = {
@@ -372,158 +603,44 @@ class power_scraper:
 # ─────────────────────────────
 # API expected by base image
 # ─────────────────────────────
-def _raise_jtop_background_error_if_any(jetson):
-    """
-    jtop normally exposes background-thread errors through jetson.ok().
-
-    Since this exporter intentionally does NOT call jetson.ok() in the
-    sampling loop, we check the private _error field directly so that
-    connection failures do not silently turn into stale metrics forever.
-    """
-
-    error = getattr(jetson, "_error", None)
-
-    if error:
-        ex_type, ex_value, tb = error
-        ex_value.__traceback__ = tb
-        raise ex_value
-
-    if not getattr(jetson, "_running", False):
-        raise RuntimeError("jtop background thread is not running")
 
 
-def get_power(output_queue, scrape_interval_s, stop_event):
-    """
-    Collect raw telemetry from jtop and push raw records into output_queue.
-
-    IMPORTANT:
-    This loop owns the sampling interval.
-
-    It does NOT wait on jetson.ok().
-    It does NOT use jtop's update interval as the exporter interval.
-
-    Timing behavior per batch:
-
-        batch_start = time.monotonic()
-        collect one full batch
-        push raw batch to queue
-        elapsed = time.monotonic() - batch_start
-
-        if elapsed < SCRAPE_INTERVAL_S:
-            sleep(SCRAPE_INTERVAL_S - elapsed)
-        else:
-            do not sleep
-            print warning
-    """
-
-    requested_interval_s = max(float(scrape_interval_s), 0.0)
-
-    raw_queue_put_timeout_s = _env_float(
-        "RAW_QUEUE_PUT_TIMEOUT_S",
-        default=0.2,
-    )
+def get_power(raw_queue, scrape_interval_s: float, stop_event) -> None:
+    jetson = DirectJetson()
 
     log.info(
-        "xavier-nx-jtop get_power thread started "
-        "(requested_sample_interval=%.6fs, service_label=%s). "
-        "Sampling cadence is controlled by this exporter loop, not by jetson.ok().",
-        requested_interval_s,
+        "direct Jetson collector started proc_root=%s sys_root=%s service=%s",
+        jetson.proc_root,
+        jetson.sys_root,
         SERVICE_LABEL,
     )
 
-    scraper = power_scraper()
-    batch_counter = 0
+    batch_idx = 0
 
     while not stop_event.is_set():
-        try:
-            # Do NOT pass scrape_interval_s here.
-            #
-            # jtop() still has its own internal service/cache refresh behavior,
-            # but this exporter does not wait for it and does not use it as the
-            # sampling interval.
-            with jtop() as jetson:
-                log.info(
-                    "Connected to jtop service. "
-                    "jtop reported service interval=%s, user interval=%s. "
-                    "Exporter sampling interval=%.6fs.",
-                    getattr(jetson, "interval", "unknown"),
-                    getattr(jetson, "interval_user", "unknown"),
-                    requested_interval_s,
-                )
+        loop_started = time.monotonic()
+        timestamp = _utc_iso()
 
-                while not stop_event.is_set():
-                    batch_start_monotonic = time.monotonic()
-                    batch_counter += 1
+        jetson.refresh()
 
-                    # Do not call jetson.ok() here.
-                    #
-                    # We only check whether the jtop background thread has
-                    # failed. This is non-blocking.
-                    _raise_jtop_background_error_if_any(jetson)
+        raw: dict = {"timestamp": timestamp}
 
-                    raw = scraper.get_power(jetson)
+        for spec in COLLECTORS:
+            section = spec.collect_if_due(jetson, loop_started)
+            if section:
+                raw[spec.name] = section
 
-                    sections = [
-                        key for key in raw.keys()
-                        if key != "timestamp"
-                    ]
+        sections = [k for k in raw.keys() if k != "timestamp"]
 
-                    if sections:
-                        log.debug(
-                            "jtop batch #%d sections=%s",
-                            batch_counter,
-                            sections,
-                        )
+        if sections:
+            batch_idx += 1
+            log.info("direct Jetson batch #%d sections=%s", batch_idx, sections)
+            raw_queue.put(raw)
 
-                        try:
-                            output_queue.put(
-                                raw,
-                                timeout=raw_queue_put_timeout_s,
-                            )
-                        except queue.Full:
-                            log.warning(
-                                "Raw telemetry queue is full; "
-                                "dropping jtop batch #%d",
-                                batch_counter,
-                            )
-                    else:
-                        log.debug(
-                            "jtop batch #%d had no enabled sections",
-                            batch_counter,
-                        )
-
-                    batch_elapsed_s = time.monotonic() - batch_start_monotonic
-                    sleep_s = requested_interval_s - batch_elapsed_s
-
-                    if sleep_s > 0:
-                        log.debug(
-                            "jtop batch #%d took %.6fs; sleeping %.6fs "
-                            "to match requested interval %.6fs",
-                            batch_counter,
-                            batch_elapsed_s,
-                            sleep_s,
-                            requested_interval_s,
-                        )
-
-                        stop_event.wait(sleep_s)
-
-                    else:
-                        log.warning(
-                            "jtop batch #%d took %.6fs, which is slower than "
-                            "the requested interval %.6fs. "
-                            "Not sleeping before next batch.",
-                            batch_counter,
-                            batch_elapsed_s,
-                            requested_interval_s,
-                        )
-
-        except Exception as exc:
-            log.exception(
-                "jtop collection loop failed; reconnecting in %.1fs: %s",
-                JTOP_RECONNECT_DELAY_S,
-                exc,
-            )
-            stop_event.wait(JTOP_RECONNECT_DELAY_S)
+        elapsed = time.monotonic() - loop_started
+        sleep_s = max(0.0, scrape_interval_s - elapsed)
+        if stop_event.wait(sleep_s):
+            break
 
 def process_data(input_queue: queue.Queue, output_queue: queue.Queue, stop_event):
     """
