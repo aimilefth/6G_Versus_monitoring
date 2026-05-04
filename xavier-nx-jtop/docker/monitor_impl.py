@@ -233,7 +233,7 @@ def collect_memory_util(jetson: jtop) -> dict[str, float]:
     out: dict[str, float] = {}
 
     mem = jetson.memory
-    ram = mem.get("RAM", {}) if isinstance(mem, dict) else {}
+    ram = mem.get("RAM", {}) if hasattr(mem, "get") else {}
 
     used = _safe_float(ram.get("used"))
     total = _safe_float(ram.get("tot"))
@@ -242,7 +242,6 @@ def collect_memory_util(jetson: jtop) -> dict[str, float]:
         out["RAM"] = max(0.0, min(100.0, 100.0 * used / total))
 
     return out
-
 
 def collect_gpu_util(jetson: jtop) -> dict[str, float]:
     """
