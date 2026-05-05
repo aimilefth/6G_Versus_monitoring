@@ -9,16 +9,17 @@ PROMETHEUS_URL = "http://localhost:9090"
 # =================================================
 
 
-def fetch_data(minutes):
+def fetch_data(device, minutes):
     time_window = f"{minutes}m"
 
-    # The PromQL selector. We want all timeseries coming from our source.
-    query = f'{{source=~"xavier-nx.*"}}[{time_window}]'
+    # The PromQL selector. We want all timeseries coming from the selected source.
+    query = f'{{source=~"{device}.*"}}[{time_window}]'
 
     # Output CSV configuration
-    output_csv = f"prometheus_xavier_nx_data_{time_window}.csv"
+    output_csv = f"prometheus_{device}_data_{time_window}.csv"
 
     print(f"Querying Prometheus at {PROMETHEUS_URL}")
+    print(f"Device: {device}")
     print(f"Query: {query}")
 
     response = requests.get(
@@ -88,7 +89,16 @@ def fetch_data(minutes):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("minutes", type=int, help="How many minutes of Prometheus data to fetch")
+    parser.add_argument(
+        "device",
+        choices=["xavier-nx", "agx-orin"],
+        help="Device/source to fetch: xavier-nx or agx-orin"
+    )
+    parser.add_argument(
+        "minutes",
+        type=int,
+        help="How many minutes of Prometheus data to fetch"
+    )
     args = parser.parse_args()
 
-    fetch_data(args.minutes)
+    fetch_data(args.device, args.minutes)
