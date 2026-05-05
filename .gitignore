@@ -4,3 +4,4 @@ grafana/grafana-storage
 build.log
 *.csv
 *.png
+data
