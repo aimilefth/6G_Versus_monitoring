@@ -60,15 +60,19 @@ def _iso_to_ms(iso_str: str) -> int:
 def _sanitize_component(value: Any) -> str:
     """
     Keep label values readable and stable.
-    Prometheus label values can contain almost anything, but keeping them simple
-    makes Grafana legends nicer.
+    Also remove sysfs NUL/control characters, e.g. gpu\x00 from of_node/name.
     """
-    text = str(value).strip()
+    text = str(value).replace("\x00", "").strip()
+
+    # Replace any remaining control/whitespace runs with underscores.
+    text = re.sub(r"[\x01-\x1f\x7f\s]+", "_", text)
+
     return (
-        text.replace(" ", "_")
-            .replace("/", "_")
+        text.replace("/", "_")
             .replace("\\", "_")
             .replace("-", "_")
+            .strip("_")
+        or "unknown"
     )
 
 HOST_PROC = Path(os.getenv("HOST_PROC", "/proc"))
@@ -181,7 +185,7 @@ KNOWN_GPU_NAMES = {"gv11b", "gp10b", "ga10b", "gb10b", "gpu"}
 
 def _read_text(path: Path) -> str | None:
     try:
-        return path.read_text().strip()
+        return path.read_text().replace("\x00", "").strip()
     except Exception:
         return None
 
