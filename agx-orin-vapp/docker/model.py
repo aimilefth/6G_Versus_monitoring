@@ -1,35 +1,16 @@
 """
-Replace this file with your real calibration model.
+Simple linear-regression calibration model.
 
-Contract used by monitor_impl.py:
+Input data is one row per common timestamp. The model uses:
 
-    def model(data: list[dict]) -> list[dict] | list[float]
+    calibration =
+        1.6911937004
+        + 1.1781966992 * agx_orin_power_watts__total
+        - 0.0028431503 * gpu_util
 
-Input `data` is one row per common timestamp:
-
-    {
-        "timestamp_ms": 1777969625405,
-        "timestamp_iso": "2026-05-05T08:27:05.405000Z",
-        "features": {
-            "agx_orin_cpu_freq_mhz__cpu0": 729.6,
-            "agx_orin_cpu_util_percent__cpu0": 10.0,
-            "agx_orin_power_watts__total": 7.028,
-            ...
-        },
-        "labels": {"input_source": "agx-orin-jtop-01"}
-    }
-
-Return either:
-
-    [{"timestamp_ms": row["timestamp_ms"], "calibrated_power": value}, ...]
-
-or simply:
-
-    [value0, value1, ...]
-
-The default implementation is a safe pass-through baseline + 1.0: it uses
-agx_orin_power_watts__total when present; otherwise it sums the non-total
-agx_orin_power_watts__* features.
+Expected feature keys:
+    agx_orin_power_watts__total
+    agx_orin_gpu_util_percent__gpu
 """
 
 from typing import Any
@@ -50,21 +31,25 @@ def model(data: list[dict]) -> list[dict]:
     for row in data:
         features = row.get("features", {}) or {}
 
-        calibrated = _safe_float(features.get("agx_orin_power_watts__total"))
+        total_power = _safe_float(features.get("agx_orin_power_watts__total"))
+        gpu_util = _safe_float(features.get("agx_orin_gpu_util_percent__gpu"))
 
-        if calibrated is None:
-            # Fallback for early testing if the total rail is not present.
-            power_values = [
-                _safe_float(v)
-                for k, v in features.items()
-                if k.startswith("agx_orin_power_watts__") and not k.endswith("__total")
-            ]
-            calibrated = sum(v for v in power_values if v is not None)
+        if total_power is None:
+            total_power = 0.0
+
+        if gpu_util is None:
+            gpu_util = 0.0
+
+        calibration = (
+            1.6911937004
+            + 1.1781966992 * total_power
+            - 0.0028431503 * gpu_util
+        )
 
         outputs.append(
             {
                 "timestamp_ms": row["timestamp_ms"],
-                "calibrated_power": calibrated+ 1.0,
+                "calibrated_power": calibration,
             }
         )
 
